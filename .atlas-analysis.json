@@ -1,0 +1,198 @@
+{
+  "projectType": "framework",
+  "projectName": "Genkit",
+  "projectDescription": "Open-source framework for building AI-powered applications in JavaScript, Go, and Python with unified APIs for LLMs, tools, and agentic workflows.",
+  "theme": "aspen",
+  "primaryColor": "#FF6F00",
+  "lightColor": "#FFA726",
+  "darkColor": "#E65100",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "why-genkit",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/installation",
+              "getting-started/javascript-quickstart",
+              "getting-started/go-quickstart",
+              "getting-started/python-quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/flows",
+              "concepts/models",
+              "concepts/prompts",
+              "concepts/tools",
+              "concepts/plugins",
+              "concepts/observability"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/text-generation",
+              "guides/structured-output",
+              "guides/streaming",
+              "guides/tool-calling",
+              "guides/rag",
+              "guides/multimodal",
+              "guides/chat-interfaces",
+              "guides/evaluation"
+            ]
+          },
+          {
+            "group": "Model Providers",
+            "pages": [
+              "providers/overview",
+              "providers/google-genai",
+              "providers/vertex-ai",
+              "providers/anthropic",
+              "providers/openai-compatible",
+              "providers/ollama",
+              "providers/custom-providers"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/firebase",
+              "deployment/cloud-run",
+              "deployment/nodejs",
+              "deployment/go",
+              "deployment/python"
+            ]
+          },
+          {
+            "group": "Developer Tools",
+            "pages": [
+              "devtools/cli",
+              "devtools/developer-ui",
+              "devtools/testing",
+              "devtools/debugging"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "JavaScript/TypeScript",
+            "pages": [
+              "api/javascript/genkit",
+              "api/javascript/models",
+              "api/javascript/flows",
+              "api/javascript/prompts",
+              "api/javascript/tools",
+              "api/javascript/embedders",
+              "api/javascript/retrievers",
+              "api/javascript/evaluators"
+            ]
+          },
+          {
+            "group": "Go",
+            "pages": [
+              "api/go/genkit",
+              "api/go/ai",
+              "api/go/flows",
+              "api/go/prompts",
+              "api/go/tools"
+            ]
+          },
+          {
+            "group": "Python",
+            "pages": [
+              "api/python/genkit",
+              "api/python/models",
+              "api/python/flows",
+              "api/python/prompts",
+              "api/python/tools",
+              "api/python/plugins"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Plugins",
+        "groups": [
+          {
+            "group": "Official Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/google-genai",
+              "plugins/vertex-ai",
+              "plugins/anthropic",
+              "plugins/ollama",
+              "plugins/firebase",
+              "plugins/express",
+              "plugins/chroma",
+              "plugins/pinecone"
+            ]
+          },
+          {
+            "group": "Plugin Development",
+            "pages": [
+              "plugins/creating-plugins",
+              "plugins/plugin-api",
+              "plugins/publishing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Community",
+            "pages": [
+              "resources/examples",
+              "resources/community",
+              "resources/contributing",
+              "resources/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-language SDKs (JavaScript/TypeScript, Go, Python)",
+    "Unified API for 100+ AI models from multiple providers",
+    "Type-safe structured output generation",
+    "Tool calling and agentic workflows",
+    "RAG (Retrieval-Augmented Generation)",
+    "Built-in developer UI and CLI",
+    "Production monitoring and observability",
+    "Plugin architecture for extensibility",
+    "Streaming support for real-time responses",
+    "Deploy anywhere (Firebase, Cloud Run, or any platform)"
+  ],
+  "publicApiSurface": [
+    "genkit() - Main initialization function",
+    "generate() - Text and content generation",
+    "generateStream() - Streaming generation",
+    "defineFlow() - Create AI workflows",
+    "defineTool() - Define tools for models",
+    "definePrompt() - Create reusable prompts",
+    "embed() - Generate embeddings",
+    "retrieve() - Retrieve documents (RAG)",
+    "evaluate() - Evaluate AI outputs",
+    "modelRef() - Reference AI models",
+    "Plugin interface - Extend framework capabilities",
+    "CLI commands - genkit start, genkit flow:run"
+  ]
+}
