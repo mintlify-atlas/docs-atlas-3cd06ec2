@@ -9,7 +9,7 @@ Genkit is designed around a flexible, plugin-based architecture that makes it ea
 
 At the heart of Genkit is a **Registry** that manages all actions (flows, tools, models, prompts, etc.) and coordinates between your application code, plugins, and observability systems.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Your Application                                    │
 │                                                                             │
@@ -92,7 +92,7 @@ Plugins extend Genkit's capabilities. Each plugin:
 - **Registers actions**: Can pre-register actions during `init()` or resolve them on-demand
 - **Has a namespace**: Prevents naming conflicts (e.g., `googleai/gemini-2.0-flash`)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                  Plugin (Abstract Base Class)                       │
 │                  genkit.core.plugin.Plugin                          │
@@ -123,7 +123,7 @@ Plugins extend Genkit's capabilities. Each plugin:
 
 Plugins go through four phases:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      Plugin Lifecycle                               │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -179,7 +179,7 @@ Plugins go through four phases:
 
 When you reference an action by name, the Registry uses a multi-step resolution algorithm:
 
-```
+```text
 ai.generate(model="googleai/gemini-2.0-flash")
      │
      ▼
@@ -215,7 +215,7 @@ ai.generate(model="googleai/gemini-2.0-flash")
 
 Genkit automatically instruments all actions with **OpenTelemetry** tracing:
 
-```
+```text
 ai.generate(prompt="Tell me a joke")
      │
      ▼
