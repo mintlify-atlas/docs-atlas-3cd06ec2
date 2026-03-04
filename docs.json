@@ -1,122 +1,185 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Genkit",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#FF6F00",
+    "light": "#FFA726",
+    "dark": "#E65100"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/firebase/genkit"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/firebase/genkit",
+      "discord": "https://discord.gg/qXt5zzQKpc"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "why-genkit",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Getting Started",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "getting-started/installation",
+              "getting-started/javascript-quickstart",
+              "getting-started/go-quickstart",
+              "getting-started/python-quickstart"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "concepts/architecture",
+              "concepts/flows",
+              "concepts/models",
+              "concepts/prompts",
+              "concepts/tools",
+              "concepts/plugins",
+              "concepts/observability"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/text-generation",
+              "guides/structured-output",
+              "guides/streaming",
+              "guides/tool-calling",
+              "guides/rag",
+              "guides/multimodal",
+              "guides/chat-interfaces",
+              "guides/evaluation"
+            ]
+          },
+          {
+            "group": "Model Providers",
+            "pages": [
+              "providers/overview",
+              "providers/google-genai",
+              "providers/vertex-ai",
+              "providers/anthropic",
+              "providers/openai-compatible",
+              "providers/ollama",
+              "providers/custom-providers"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/firebase",
+              "deployment/cloud-run",
+              "deployment/nodejs",
+              "deployment/go",
+              "deployment/python"
+            ]
+          },
+          {
+            "group": "Developer Tools",
+            "pages": [
+              "devtools/cli",
+              "devtools/developer-ui",
+              "devtools/testing",
+              "devtools/debugging"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "JavaScript/TypeScript",
             "pages": [
-              "api-reference/introduction"
+              "api/javascript/genkit",
+              "api/javascript/models",
+              "api/javascript/flows",
+              "api/javascript/prompts",
+              "api/javascript/tools",
+              "api/javascript/embedders",
+              "api/javascript/retrievers",
+              "api/javascript/evaluators"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Go",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/go/genkit",
+              "api/go/ai",
+              "api/go/flows",
+              "api/go/prompts",
+              "api/go/tools"
+            ]
+          },
+          {
+            "group": "Python",
+            "pages": [
+              "api/python/genkit",
+              "api/python/models",
+              "api/python/flows",
+              "api/python/prompts",
+              "api/python/tools",
+              "api/python/plugins"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Plugins",
+        "groups": [
+          {
+            "group": "Official Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/google-genai",
+              "plugins/vertex-ai",
+              "plugins/anthropic",
+              "plugins/ollama",
+              "plugins/firebase",
+              "plugins/express",
+              "plugins/chroma",
+              "plugins/pinecone"
+            ]
+          },
+          {
+            "group": "Plugin Development",
+            "pages": [
+              "plugins/creating-plugins",
+              "plugins/plugin-api",
+              "plugins/publishing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Community",
+            "pages": [
+              "resources/examples",
+              "resources/community",
+              "resources/contributing",
+              "resources/changelog"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

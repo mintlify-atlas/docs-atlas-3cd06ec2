@@ -1,0 +1,387 @@
+---
+title: Genkit
+description: Main Genkit class and initialization function
+---
+
+# Genkit
+
+The `Genkit` class encapsulates a single Genkit instance including the Registry, Reflection Server, and configuration.
+
+## Installation
+
+```bash
+npm install genkit
+```
+
+## Usage
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+  model: 'googleai/gemini-2.0-flash-exp',
+});
+```
+
+## genkit()
+
+Initializes Genkit with a set of options.
+
+**Signature:**
+
+```typescript
+function genkit(options: GenkitOptions): Genkit
+```
+
+### Parameters
+
+<ParamField path="options" type="GenkitOptions">
+  Configuration options for the Genkit instance
+
+  <Expandable title="properties">
+    <ParamField path="plugins" type="(GenkitPlugin | GenkitPluginV2)[]" optional>
+      List of plugins to load
+    </ParamField>
+
+    <ParamField path="promptDir" type="string" optional>
+      Directory where dotprompts are stored (defaults to `'./prompts'`)
+    </ParamField>
+
+    <ParamField path="model" type="ModelArgument<any>" optional>
+      Default model to use if no model is specified
+    </ParamField>
+
+    <ParamField path="context" type="ActionContext" optional>
+      Additional runtime context data for flows and tools
+    </ParamField>
+
+    <ParamField path="name" type="string" optional>
+      Display name that will be shown in developer tooling
+    </ParamField>
+
+    <ParamField path="clientHeader" type="string" optional>
+      Additional attribution information to include in the x-goog-api-client header
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="Genkit" type="Genkit">
+  A configured Genkit instance
+</ResponseField>
+
+## Class: Genkit
+
+### generate()
+
+Generate calls a generative model based on the provided prompt and configuration.
+
+**Signatures:**
+
+```typescript
+// Simple text prompt
+generate(strPrompt: string): Promise<GenerateResponse>
+
+// Multipart prompt
+generate(parts: Part[]): Promise<GenerateResponse>
+
+// Full options
+generate<O extends z.ZodTypeAny = z.ZodTypeAny>(
+  opts: GenerateOptions<O> | PromiseLike<GenerateOptions<O>>
+): Promise<GenerateResponse<z.infer<O>>>
+```
+
+### Parameters
+
+<ParamField path="prompt" type="string | Part[] | GenerateOptions">
+  The input prompt - can be a simple string, array of parts, or full options object
+
+  <Expandable title="GenerateOptions properties">
+    <ParamField path="model" type="ModelArgument" optional>
+      The model to use for generation
+    </ParamField>
+
+    <ParamField path="prompt" type="string | Part[]" optional>
+      The user prompt
+    </ParamField>
+
+    <ParamField path="system" type="string | Part[]" optional>
+      System instructions
+    </ParamField>
+
+    <ParamField path="messages" type="MessageData[]" optional>
+      Conversation history
+    </ParamField>
+
+    <ParamField path="tools" type="ToolAction[]" optional>
+      Tools available for the model to call
+    </ParamField>
+
+    <ParamField path="config" type="GenerationCommonConfig" optional>
+      Model configuration (temperature, maxOutputTokens, etc.)
+    </ParamField>
+
+    <ParamField path="output" type="{ schema?: z.ZodTypeAny, format?: string }" optional>
+      Output schema and format specification
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="GenerateResponse">
+  The generation response containing:
+  - `text`: The generated text
+  - `output()`: Parsed output according to schema
+  - `messages`: Full conversation history
+  - `usage`: Token usage information
+</ResponseField>
+
+### Example
+
+```typescript
+const ai = genkit({
+  plugins: [googleAI()],
+  model: 'googleai/gemini-2.0-flash-exp',
+});
+
+// Simple text generation
+const { text } = await ai.generate('Tell me a joke');
+
+// With tools
+const { text } = await ai.generate({
+  prompt: 'What is the weather in Paris?',
+  tools: [weatherTool],
+});
+
+// With structured output
+const response = await ai.generate({
+  prompt: 'List 3 colors',
+  output: {
+    schema: z.object({ colors: z.array(z.string()) }),
+  },
+});
+const { colors } = response.output();
+```
+
+### generateStream()
+
+Streaming version of `generate()` that returns chunks as they are generated.
+
+**Signature:**
+
+```typescript
+generateStream<O extends z.ZodTypeAny = z.ZodTypeAny>(
+  options: string | Part[] | GenerateStreamOptions<O>
+): GenerateStreamResponse<z.infer<O>>
+```
+
+### Returns
+
+<ResponseField name="response" type="GenerateStreamResponse">
+  An object containing:
+  - `response`: Promise that resolves to the final response
+  - `stream`: Channel of response chunks
+</ResponseField>
+
+### Example
+
+```typescript
+const { response, stream } = ai.generateStream('Tell me a story');
+
+for await (const chunk of stream) {
+  console.log(chunk.text);
+}
+
+const finalResponse = await response;
+console.log('Final:', finalResponse.text);
+```
+
+### defineFlow()
+
+Defines and registers a flow function.
+
+**Signature:**
+
+```typescript
+defineFlow<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  S extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  config: FlowConfig<I, O, S> | string,
+  fn: FlowFn<I, O, S>
+): Action<I, O, S>
+```
+
+### Parameters
+
+<ParamField path="config" type="FlowConfig | string" required>
+  Flow configuration or name string
+
+  <Expandable title="FlowConfig properties">
+    <ParamField path="name" type="string" required>
+      Unique flow identifier
+    </ParamField>
+
+    <ParamField path="inputSchema" type="z.ZodTypeAny" optional>
+      Input validation schema
+    </ParamField>
+
+    <ParamField path="outputSchema" type="z.ZodTypeAny" optional>
+      Output validation schema
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="fn" type="FlowFn<I, O, S>" required>
+  The flow implementation function
+</ParamField>
+
+### Example
+
+```typescript
+const menuSuggestionFlow = ai.defineFlow(
+  {
+    name: 'menuSuggestionFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (subject) => {
+    const { text } = await ai.generate({
+      prompt: `Suggest an item for the menu of a ${subject} themed restaurant`,
+    });
+    return text;
+  }
+);
+
+const suggestion = await menuSuggestionFlow('pirate');
+```
+
+### defineTool()
+
+Defines and registers a tool that can be used by models.
+
+**Signature:**
+
+```typescript
+defineTool<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
+  config: ToolConfig<I, O>,
+  fn: ToolFn<I, O>
+): ToolAction<I, O>
+```
+
+### Parameters
+
+<ParamField path="config" type="ToolConfig" required>
+  Tool configuration
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Tool identifier
+    </ParamField>
+
+    <ParamField path="description" type="string" required>
+      Description for the model
+    </ParamField>
+
+    <ParamField path="inputSchema" type="z.ZodTypeAny" required>
+      Input schema
+    </ParamField>
+
+    <ParamField path="outputSchema" type="z.ZodTypeAny" required>
+      Output schema
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="fn" type="ToolFn<I, O>" required>
+  Tool implementation function
+</ParamField>
+
+### Example
+
+```typescript
+const weatherTool = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Gets the current weather in a location',
+    inputSchema: z.object({ location: z.string() }),
+    outputSchema: z.string(),
+  },
+  async ({ location }) => {
+    // Fetch weather data
+    return `The weather in ${location} is sunny`;
+  }
+);
+```
+
+### definePrompt()
+
+Defines and registers a prompt based on a function or template.
+
+**Signature:**
+
+```typescript
+definePrompt<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  CustomOptions extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  options: PromptConfig<I, O, CustomOptions>,
+  templateOrFn?: string | PromptFn<I>
+): ExecutablePrompt<z.infer<I>, O, CustomOptions>
+```
+
+### Example
+
+```typescript
+const greetingPrompt = ai.definePrompt(
+  {
+    name: 'greeting',
+    input: { schema: z.object({ name: z.string() }) },
+    messages: async (input) => [
+      { role: 'user', content: [{ text: `Hello, ${input.name}!` }] },
+    ],
+  }
+);
+
+const { text } = await greetingPrompt({ name: 'World' });
+```
+
+### run()
+
+A flow step that executes the provided function. Each run step is recorded separately in the trace.
+
+**Signature:**
+
+```typescript
+run<T>(name: string, func: () => Promise<T>): Promise<T>
+run<T>(name: string, input: any, func: (input?: any) => Promise<T>): Promise<T>
+```
+
+### Example
+
+```typescript
+ai.defineFlow('processData', async () => {
+  const data = await ai.run('fetch-data', async () => {
+    return fetchDataFromAPI();
+  });
+
+  const result = await ai.run('process-data', async () => {
+    return processData(data);
+  });
+
+  return result;
+});
+```
+
+## See Also
+
+- [Models API](/api/javascript/models)
+- [Flows API](/api/javascript/flows)
+- [Tools API](/api/javascript/tools)
+- [Prompts API](/api/javascript/prompts)

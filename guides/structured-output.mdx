@@ -1,0 +1,316 @@
+---
+title: Structured Output
+description: Generate type-safe JSON data with AI models
+---
+
+# Structured Output
+
+Genkit allows you to generate structured JSON data that maps directly to your programming language's type system. This ensures type safety and makes it easy to use AI-generated data in your applications.
+
+## Basic Structured Output
+
+Define a schema and get type-safe JSON output:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const RecipeSchema = z.object({
+  title: z.string(),
+  ingredients: z.array(z.string()),
+  steps: z.array(z.string()),
+});
+
+const { output } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Create a recipe for chocolate chip cookies',
+  output: { schema: RecipeSchema }
+});
+
+console.log(output.title);
+console.log(output.ingredients);
+```
+
+```go Go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+type Recipe struct {
+    Title       string   `json:"title"`
+    Ingredients []string `json:"ingredients"`
+    Steps       []string `json:"steps"`
+}
+
+func main() {
+    ctx := context.Background()
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    recipe, _ := genkit.GenerateData[Recipe](ctx, g,
+        ai.WithModelName("googleai/gemini-2.5-flash"),
+        ai.WithPrompt("Create a recipe for chocolate chip cookies."),
+    )
+    fmt.Printf("Recipe: %s\n", recipe.Title)
+}
+```
+
+```python Python
+from pydantic import BaseModel
+from genkit.ai import Genkit
+from genkit.plugins.google_genai import VertexAI
+
+class Recipe(BaseModel):
+    title: str
+    ingredients: list[str]
+    steps: list[str]
+
+ai = Genkit(plugins=[VertexAI()])
+
+response = await ai.generate(
+    'Create a recipe for chocolate chip cookies',
+    output={'schema': Recipe}
+)
+
+print(response.output.title)
+```
+
+</CodeGroup>
+
+## Schema Annotations
+
+Use schema annotations to guide the model's output:
+
+<CodeGroup>
+
+```typescript TypeScript
+const JokeSchema = z.object({
+  setup: z.string().describe('The joke setup'),
+  punchline: z.string().describe('The joke punchline'),
+  category: z.enum(['pun', 'wordplay', 'observational']),
+});
+
+const { output } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Tell me a joke about cats',
+  output: { schema: JokeSchema }
+});
+```
+
+```go Go
+// Note how the fields are annotated with jsonschema tags to describe the output schema.
+// This is vital for the model to understand the intent of the fields.
+type Joke struct {
+    Joke     string `json:"joke" jsonschema:"description=The joke text"`
+    Category string `json:"category" jsonschema:"description=The joke category"`
+}
+
+joke, _ := genkit.GenerateData[*Joke](ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Tell me a joke about cats."),
+)
+```
+
+</CodeGroup>
+
+## Complex Schemas
+
+Create nested structures for complex data:
+
+<CodeGroup>
+
+```go Go
+type Ingredient struct {
+    Name     string `json:"name" jsonschema:"description=The ingredient name"`
+    Amount   string `json:"amount" jsonschema:"description=The ingredient amount (e.g. 1 cup, 2 tablespoons, etc.)"`
+    Optional bool   `json:"optional,omitempty" jsonschema:"description=Whether the ingredient is optional in the recipe"`
+}
+
+type Recipe struct {
+    Title        string        `json:"title" jsonschema:"description=The recipe title (e.g. 'Spicy Chicken Tacos')"`
+    Description  string        `json:"description,omitempty" jsonschema:"description=The recipe description (under 100 characters)"`
+    Ingredients  []*Ingredient `json:"ingredients" jsonschema:"description=The recipe ingredients (order by type first and then importance)"`
+    Instructions []string      `json:"instructions" jsonschema:"description=The recipe instructions (step by step)"`
+    PrepTime     string        `json:"prepTime" jsonschema:"description=The recipe preparation time (e.g. 10 minutes, 30 minutes, etc.)"`
+    Difficulty   string        `json:"difficulty" jsonschema:"enum=easy,enum=medium,enum=hard"`
+}
+
+recipe, _ := genkit.GenerateData[*Recipe](ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Create a recipe for spaghetti carbonara."),
+)
+```
+
+```typescript TypeScript
+const IngredientSchema = z.object({
+  name: z.string(),
+  amount: z.string(),
+  optional: z.boolean().optional(),
+});
+
+const RecipeSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  ingredients: z.array(IngredientSchema),
+  instructions: z.array(z.string()),
+  prepTime: z.string(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+});
+
+const { output } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Create a recipe for spaghetti carbonara',
+  output: { schema: RecipeSchema }
+});
+```
+
+</CodeGroup>
+
+## Structured Output in Flows
+
+Create flows that return structured data:
+
+<CodeGroup>
+
+```go Go
+type RecipeRequest struct {
+    Dish                string   `json:"dish" jsonschema:"default=pasta"`
+    Cuisine             string   `json:"cuisine" jsonschema:"default=Italian"`
+    ServingSize         int      `json:"servingSize" jsonschema:"default=4"`
+    MaxPrepMinutes      int      `json:"maxPrepMinutes" jsonschema:"default=30"`
+    DietaryRestrictions []string `json:"dietaryRestrictions,omitempty"`
+}
+
+recipeFlow := genkit.DefineFlow(g, "recipeFlow",
+    func(ctx context.Context, input RecipeRequest) (*Recipe, error) {
+        return genkit.GenerateData[*Recipe](ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithSystem("You are an experienced chef. Come up with easy, creative recipes."),
+            ai.WithPromptFn(func(ctx context.Context, _ any) (string, error) {
+                prompt := fmt.Sprintf(
+                    "Create a %s %s recipe for %d people that takes under %d minutes to prepare.",
+                    input.Cuisine, input.Dish, input.ServingSize, input.MaxPrepMinutes,
+                )
+                if len(input.DietaryRestrictions) > 0 {
+                    prompt += fmt.Sprintf(" Dietary restrictions: %v.", input.DietaryRestrictions)
+                }
+                return prompt, nil
+            }),
+        )
+    },
+)
+
+recipe, _ := recipeFlow.Run(ctx, RecipeRequest{
+    Dish:        "tacos",
+    Cuisine:     "Mexican",
+    ServingSize: 4,
+})
+```
+
+```typescript TypeScript
+const RecipeRequestSchema = z.object({
+  dish: z.string(),
+  cuisine: z.string(),
+  servingSize: z.number(),
+  maxPrepMinutes: z.number().default(30),
+  dietaryRestrictions: z.array(z.string()).optional(),
+});
+
+const recipeFlow = ai.defineFlow(
+  {
+    name: 'generateRecipe',
+    inputSchema: RecipeRequestSchema,
+    outputSchema: RecipeSchema,
+  },
+  async (input) => {
+    const { output } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      system: 'You are an experienced chef. Come up with easy, creative recipes.',
+      prompt: `Create a ${input.cuisine} ${input.dish} recipe for ${input.servingSize} people`,
+      output: { schema: RecipeSchema }
+    });
+    return output;
+  }
+);
+```
+
+</CodeGroup>
+
+## Dynamic Prompts with Structured Input
+
+Use structured input to build complex prompts:
+
+<CodeGroup>
+
+```go Go
+ai.WithPromptFn(func(ctx context.Context, _ any) (string, error) {
+    prompt := fmt.Sprintf(
+        "Create a %s %s recipe for %d people that takes under %d minutes to prepare.",
+        input.Cuisine, input.Dish, input.ServingSize, input.MaxPrepMinutes,
+    )
+    if len(input.DietaryRestrictions) > 0 {
+        prompt += fmt.Sprintf(" Dietary restrictions: %v.", input.DietaryRestrictions)
+    }
+    return prompt, nil
+})
+```
+
+</CodeGroup>
+
+## Streaming Structured Output
+
+Stream structured data as it's generated. See the [Streaming guide](/guides/streaming#streaming-structured-data) for details.
+
+## Best Practices
+
+### Use Descriptive Field Names
+
+Choose clear, self-explanatory field names that help the model understand what to generate.
+
+### Add Schema Descriptions
+
+Use `jsonschema` tags (Go) or `.describe()` (TypeScript) to provide additional context:
+
+```go Go
+type Product struct {
+    Name  string  `json:"name" jsonschema:"description=The product name"`
+    Price float64 `json:"price" jsonschema:"description=Price in USD"`
+}
+```
+
+### Use Enums for Categories
+
+Constrain outputs to specific values using enums:
+
+```go Go
+type Article struct {
+    Category string `json:"category" jsonschema:"enum=news,enum=sports,enum=tech"`
+}
+```
+
+### Handle Optional Fields
+
+Mark fields as optional when they may not always be present:
+
+```go Go
+type User struct {
+    Name     string `json:"name"`
+    Nickname string `json:"nickname,omitempty"`
+}
+```
+
+## Next Steps
+
+- Learn about [Streaming](/guides/streaming) to stream structured data
+- Explore [Tool Calling](/guides/tool-calling) for dynamic capabilities
+- Check out [Prompts](/concepts/prompts) for advanced templating

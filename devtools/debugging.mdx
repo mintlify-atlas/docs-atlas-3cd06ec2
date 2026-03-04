@@ -1,0 +1,512 @@
+---
+title: Debugging
+description: Techniques for debugging Genkit AI applications
+---
+
+Debugging AI applications requires specialized tools to understand model behavior, trace execution flows, and diagnose issues. Genkit provides comprehensive debugging capabilities through traces, the Developer UI, and CLI tools.
+
+## Trace-Based Debugging
+
+Genkit automatically collects detailed execution traces that show every step of your flow execution.
+
+### Enabling Traces
+
+Traces are automatically collected when:
+
+1. **Using `genkit start`:**
+   ```bash
+   genkit start -- npm run dev
+   ```
+
+2. **Running with `GENKIT_ENV=dev`:**
+   ```bash
+   GENKIT_ENV=dev npm run dev
+   ```
+
+3. **Executing flows via CLI:**
+   ```bash
+   genkit flow:run myFlow '{"input":"data"}'
+   ```
+
+### Viewing Traces in Developer UI
+
+The Developer UI provides the most powerful trace inspection:
+
+1. **Start the Developer UI:**
+   ```bash
+   genkit start -- npm run dev
+   ```
+
+2. **Navigate to Traces** section at `http://localhost:4000`
+
+3. **Select a trace** to inspect:
+   - Recent executions appear at the top
+   - Failed executions are highlighted
+   - Click any trace to view details
+
+### Trace Information
+
+Each trace includes:
+
+- **Span Tree**: Hierarchical view of all operations
+- **Timing Data**: Duration of each step
+- **Input/Output**: Data passed between steps
+- **Model Interactions**: Prompts sent and responses received
+- **Error Details**: Stack traces and error messages
+- **Metadata**: Flow name, version, labels, and attributes
+
+**Example trace for a greeting flow:**
+```
+└─ Flow: simpleGreeting (234ms)
+   ├─ Input: {"customerName": "Sam"}
+   ├─ Prompt: greetingPrompt (210ms)
+   │  ├─ Model: gemini-flash-latest
+   │  ├─ Request: "You're a barista...Sam enters..."
+   │  └─ Response: "Welcome back, Sam! How about..."
+   └─ Output: "Welcome back, Sam! How about a cappuccino?"
+```
+
+## Debugging Common Issues
+
+### Flow Execution Failures
+
+**Symptom:** Flow throws an error or returns unexpected results
+
+**Debug Steps:**
+
+1. **Check the trace in the Developer UI:**
+   - Identify which step failed
+   - Review error message and stack trace
+   - Examine input data to that step
+
+2. **Run the flow with test data:**
+   ```bash
+   genkit flow:run myFlow '{"test":"data"}' --stream
+   ```
+
+3. **Verify input schema:**
+   ```typescript
+   // Add validation logging
+   const flow = ai.defineFlow(
+     {
+       name: 'myFlow',
+       inputSchema: z.object({
+         question: z.string(),
+       }),
+     },
+     async (input) => {
+       console.log('Received input:', input);
+       // ... rest of flow
+     }
+   );
+   ```
+
+4. **Check each step:**
+   - Review the trace to see where execution stopped
+   - Check if null or undefined values are passed
+   - Verify model responses are as expected
+
+### Model Response Issues
+
+**Symptom:** Model returns unexpected or low-quality responses
+
+**Debug Steps:**
+
+1. **Inspect the prompt in traces:**
+   - View the exact prompt sent to the model
+   - Check if template variables were substituted correctly
+   - Verify context and examples are included
+
+2. **Test prompt directly in Developer UI:**
+   - Navigate to Prompts section
+   - Select your prompt
+   - Try different inputs
+   - Compare outputs from different models
+
+3. **Add prompt logging:**
+   ```typescript
+   const prompt = ai.definePrompt(
+     {
+       name: 'myPrompt',
+       model: googleAI.model('gemini-flash-latest'),
+     },
+     async (input) => {
+       console.log('Prompt input:', input);
+       const result = await ai.generate({
+         prompt: `Process this: ${input}`,
+       });
+       console.log('Model response:', result.text);
+       return result;
+     }
+   );
+   ```
+
+4. **Check model configuration:**
+   ```typescript
+   // Verify temperature, topK, topP settings
+   const result = await ai.generate({
+     model: googleAI.model('gemini-flash-latest'),
+     config: {
+       temperature: 0.7,
+       maxOutputTokens: 1000,
+     },
+     prompt: 'Your prompt here',
+   });
+   ```
+
+### Streaming Issues
+
+**Symptom:** Streaming output doesn't work or is incomplete
+
+**Debug Steps:**
+
+1. **Test streaming with CLI:**
+   ```bash
+   genkit flow:run myFlow '{"input":"data"}' --stream
+   ```
+
+2. **Verify streaming implementation:**
+   ```typescript
+   const streamingFlow = ai.defineFlow(
+     { name: 'streamingFlow' },
+     async (input, { sendChunk }) => {
+       const result = await ai.generateStream({
+         model: googleAI.model('gemini-flash-latest'),
+         prompt: 'Tell me a story',
+       });
+       
+       for await (const chunk of result.stream()) {
+         console.log('Chunk:', chunk.text); // Debug log
+         sendChunk(chunk.text);
+       }
+       
+       return (await result.response()).text;
+     }
+   );
+   ```
+
+3. **Check for blocking operations:**
+   - Ensure you're not awaiting the full response before streaming
+   - Verify no synchronous operations block the event loop
+
+### Performance Issues
+
+**Symptom:** Flows are slow or timeout
+
+**Debug Steps:**
+
+1. **Analyze timing in traces:**
+   - Open the trace in Developer UI
+   - Identify the slowest spans
+   - Check if model calls are taking too long
+
+2. **Measure specific operations:**
+   ```typescript
+   const flow = ai.defineFlow(
+     { name: 'myFlow' },
+     async (input) => {
+       console.time('model-call');
+       const result = await ai.generate({
+         model: googleAI.model('gemini-flash-latest'),
+         prompt: input.question,
+       });
+       console.timeEnd('model-call');
+       
+       return result.text;
+     }
+   );
+   ```
+
+3. **Check for unnecessary operations:**
+   - Review trace to find redundant model calls
+   - Look for sequential operations that could be parallel
+   - Verify retrieval queries are optimized
+
+4. **Optimize model configuration:**
+   ```typescript
+   // Reduce max tokens if output is too long
+   config: {
+     maxOutputTokens: 500,  // Instead of 2000
+   }
+   ```
+
+### Context and RAG Issues
+
+**Symptom:** Model doesn't use provided context or retrieval fails
+
+**Debug Steps:**
+
+1. **Verify context is passed:**
+   ```bash
+   genkit flow:run myFlow '{"question":"test"}' --context '["context1","context2"]'
+   ```
+
+2. **Inspect retrieval in traces:**
+   ```typescript
+   const ragFlow = ai.defineFlow(
+     { name: 'ragFlow' },
+     async (input) => {
+       const docs = await retriever.retrieve({
+         query: input.question,
+       });
+       
+       console.log('Retrieved docs:', docs); // Debug log
+       
+       const result = await ai.generate({
+         model: googleAI.model('gemini-flash-latest'),
+         prompt: `Context: ${docs.map(d => d.text).join('\n')}\n\nQuestion: ${input.question}`,
+       });
+       
+       return result.text;
+     }
+   );
+   ```
+
+3. **Check document retrieval:**
+   - View retriever span in trace
+   - Verify documents were found
+   - Check similarity scores
+   - Ensure embeddings are generated correctly
+
+### Schema Validation Errors
+
+**Symptom:** Input/output validation fails
+
+**Debug Steps:**
+
+1. **Add detailed error handling:**
+   ```typescript
+   const flow = ai.defineFlow(
+     {
+       name: 'myFlow',
+       inputSchema: z.object({
+         name: z.string(),
+         age: z.number(),
+       }),
+     },
+     async (input) => {
+       try {
+         // Process input
+       } catch (error) {
+         console.error('Validation error:', error);
+         throw error;
+       }
+     }
+   );
+   ```
+
+2. **Test schema directly:**
+   ```typescript
+   const testInput = { name: 'Alice', age: '30' }; // age is string
+   const result = inputSchema.safeParse(testInput);
+   console.log('Validation:', result);
+   ```
+
+3. **Review trace for schema errors:**
+   - Check error message in trace
+   - Verify actual vs expected types
+   - Ensure all required fields are provided
+
+## Developer UI Debugging Features
+
+### Real-Time Trace Inspection
+
+When running with `genkit start`, traces appear immediately:
+
+1. **Run a flow** from the Flows section
+2. **Click "View Trace"** to inspect execution
+3. **Expand each span** to see details
+4. **Review timing** to identify bottlenecks
+
+### Comparing Executions
+
+Compare multiple executions to identify patterns:
+
+1. Run the same flow with different inputs
+2. View traces side-by-side
+3. Compare model responses
+4. Identify inconsistencies
+
+### Error Highlighting
+
+Failed executions are clearly marked:
+
+- Red indicators for errors
+- Stack traces in span details
+- Error messages at the top level
+- Failed step highlighted in span tree
+
+## CLI Debugging Commands
+
+### Running Flows with Verbose Output
+
+```bash
+# Stream output to see progress
+genkit flow:run myFlow '{"input":"data"}' --stream
+
+# Save output for inspection
+genkit flow:run myFlow '{"input":"data"}' --output debug-output.json
+```
+
+### Extracting Debug Data
+
+Extract traces for offline analysis:
+
+```bash
+# Extract recent executions
+genkit eval:extractData myFlow --maxRows 10 --output debug-traces.json
+
+# Extract labeled runs
+genkit eval:extractData myFlow --label "debug-session" --output debug-data.json
+```
+
+### Batch Testing for Debugging
+
+Test multiple scenarios:
+
+```bash
+genkit flow:batchRun myFlow test-cases.json --label "debug-batch" --output results.json
+```
+
+Then review all traces in the Developer UI filtered by label.
+
+## Logging Best Practices
+
+### Strategic Console Logs
+
+Add logs at key points:
+
+```typescript
+const debugFlow = ai.defineFlow(
+  { name: 'debugFlow' },
+  async (input) => {
+    console.log('[DEBUG] Flow started with:', input);
+    
+    const docs = await retriever.retrieve(input.query);
+    console.log('[DEBUG] Retrieved docs:', docs.length);
+    
+    const result = await ai.generate({
+      model: googleAI.model('gemini-flash-latest'),
+      prompt: `Answer: ${input.query}`,
+    });
+    console.log('[DEBUG] Model response:', result.text);
+    
+    return result.text;
+  }
+);
+```
+
+### Structured Logging
+
+Use JSON for structured logs:
+
+```typescript
+function debugLog(stage: string, data: any) {
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    stage,
+    data,
+  }));
+}
+
+// Usage
+debugLog('input-received', input);
+debugLog('model-response', result);
+```
+
+## Debugging in Production
+
+While you shouldn't run with `GENKIT_ENV=dev` in production, you can:
+
+1. **Use evaluation datasets** to reproduce issues:
+   ```bash
+   # Extract from production (if telemetry is enabled)
+   genkit eval:extractData myFlow --label "production-errors"
+   ```
+
+2. **Test locally with production data:**
+   ```bash
+   genkit flow:run myFlow '{"actual":"production-data"}'
+   ```
+
+3. **Enable production monitoring** (see [Observability docs](/concepts/observability))
+
+## Tips for Effective Debugging
+
+1. **Always check traces first** - They contain the most complete information
+2. **Use labels** to organize debug sessions
+3. **Test incrementally** - Debug one component at a time
+4. **Compare working vs broken** - Run working examples alongside failing ones
+5. **Save traces** - Extract and save traces for complex issues
+6. **Use streaming** - Helps identify where generation stops
+7. **Review prompts** - Ensure templates render correctly
+8. **Check schemas** - Validate input/output types match expectations
+
+## Common Debugging Patterns
+
+### Isolate the Issue
+
+```typescript
+// Create minimal reproduction flow
+const minimalFlow = ai.defineFlow(
+  { name: 'minimal' },
+  async (input) => {
+    // Simplest possible version
+    return await ai.generate({
+      model: googleAI.model('gemini-flash-latest'),
+      prompt: 'Say hello',
+    });
+  }
+);
+```
+
+### Binary Search Debugging
+
+Comment out half the flow to find the problematic section:
+
+```typescript
+const flow = ai.defineFlow({ name: 'test' }, async (input) => {
+  const step1 = await doStep1();
+  console.log('Step 1 done');
+  
+  // const step2 = await doStep2();
+  // console.log('Step 2 done');
+  
+  // const step3 = await doStep3();
+  // console.log('Step 3 done');
+  
+  return step1;
+});
+```
+
+### Add Intermediate Outputs
+
+```typescript
+const flow = ai.defineFlow(
+  { 
+    name: 'debug',
+    outputSchema: z.object({
+      final: z.string(),
+      debug: z.any(),
+    }),
+  },
+  async (input) => {
+    const intermediate = await someOperation();
+    
+    return {
+      final: intermediate.result,
+      debug: {
+        rawData: intermediate,
+        processedAt: new Date(),
+      },
+    };
+  }
+);
+```
+
+## Next Steps
+
+- Explore the [Developer UI](/devtools/developer-ui) features in depth
+- Learn about [Testing](/devtools/testing) strategies
+- Review [CLI commands](/devtools/cli) for advanced debugging
+- Check out [Observability](/concepts/observability) for production monitoring

@@ -1,0 +1,520 @@
+---
+title: Observability
+description: Tracing, monitoring, and debugging AI applications with Genkit
+---
+
+Genkit provides built-in observability through automatic tracing, a local Developer UI, and production monitoring integrations with OpenTelemetry.
+
+## Why Observability Matters for AI
+
+AI applications are inherently non-deterministic and complex:
+- **Multi-step workflows**: Model calls, tool invocations, data retrieval
+- **Non-deterministic**: Same input can produce different outputs
+- **Expensive**: Token costs, latency, rate limits
+- **Hard to debug**: What went wrong in a 10-step agentic workflow?
+
+Genkit's observability features help you:
+- **Debug failures**: See exactly which step failed and why
+- **Optimize performance**: Identify slow model calls or bottlenecks
+- **Monitor costs**: Track token usage across models
+- **Improve quality**: Analyze outputs and refine prompts
+
+## Automatic Tracing
+
+Every action in Genkit is automatically traced:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Trace: myFlow                                                │
+│ Duration: 3.5s                                               │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Span: flow/myFlow (3.5s)                                    │
+│  ├─ input: {"query": "quantum computing"}                    │
+│  ├─ output: {"result": "Quantum computing is..."}          │
+│  │                                                            │
+│  ├──► Span: generate (2.1s)                                 │
+│  │   ├─ model: googleai/gemini-2.0-flash                  │
+│  │   ├─ input tokens: 150                                 │
+│  │   ├─ output tokens: 450                                │
+│  │   ├─ tool calls: [search, analyze]                     │
+│  │   │                                                      │
+│  │   ├──► Span: tool/search (0.8s)                       │
+│  │   │   ├─ input: {"query": "quantum computing"}        │
+│  │   │   └─ output: [...search results...]               │
+│  │   │                                                      │
+│  │   └──► Span: tool/analyze (0.5s)                      │
+│  │       ├─ input: {"text": "..."}                        │
+│  │       └─ output: {"summary": "..."}                   │
+│  │                                                            │
+│  └──► Span: generate (1.2s)                                 │
+│      ├─ model: googleai/gemini-2.0-flash                  │
+│      ├─ input tokens: 300                                 │
+│      └─ output tokens: 200                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Every span captures:
+- **Timing**: Start time, duration
+- **Input/Output**: Request and response data
+- **Metadata**: Model name, token usage, cost
+- **Errors**: Stack traces and error messages
+- **Hierarchy**: Parent-child relationships
+
+## Developer UI
+
+The Developer UI provides a local dashboard for testing and debugging:
+
+### Starting the Dev UI
+
+<CodeGroup>
+```bash JavaScript
+npx genkit start
+```
+
+```bash Python
+genkit start
+```
+
+```bash Go
+genkit start --output-dir ./genkit-tools
+```
+</CodeGroup>
+
+Then open http://localhost:4000
+
+### Features
+
+**1. Action Browser**
+- Browse all flows, models, prompts, tools
+- See input/output schemas
+- Read descriptions and metadata
+
+**2. Flow Runner**
+- Run flows with test inputs
+- See results in real-time
+- Test streaming responses
+- Try different configurations
+
+**3. Trace Inspector**
+- View execution traces
+- Expand/collapse spans
+- See timing breakdowns
+- Inspect input/output at each step
+- Filter by flow, model, or time range
+
+**4. Prompt Editor**
+- Edit `.prompt` files
+- Test with sample inputs
+- See rendered output
+- Compare variants
+
+**5. Model Tester**
+- Test models directly
+- Compare different models
+- Adjust temperature, topK, etc.
+- See token usage and cost
+
+## OpenTelemetry Integration
+
+Genkit uses **OpenTelemetry** for all tracing, making it compatible with any observability platform.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Your Genkit Application                          │
+│                                                                     │
+│  Flows, Tools, Models ─── All actions automatically traced     │
+└─────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+          ┌───────────────────────────────┐
+          │      OpenTelemetry SDK        │
+          │  (automatic instrumentation)  │
+          └───────────────┬────────────────┘
+                       │
+       ┌───────────────┼────────────────┐
+       │               │                │
+       ▼               ▼                ▼
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│  Cloud   │  │ Datadog  │  │ Sentry   │  ...
+│  Trace   │  │          │  │          │
+└──────────┘  └──────────┘  └──────────┘
+```
+
+Genkit automatically:
+1. Creates OpenTelemetry spans for every action
+2. Exports spans to configured backends
+3. Includes Genkit-specific attributes (tokens, model, cost)
+
+## Production Monitoring
+
+### Google Cloud Trace
+
+Integrate with Google Cloud for production tracing:
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { googleCloud } from '@genkit-ai/google-cloud';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    googleCloud({
+      projectId: 'my-project',
+      telemetryConfig: {
+        forceDevExport: false, // Only export in production
+        autoInstrumentation: true,
+      },
+    }),
+  ],
+});
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI
+from genkit.plugins.google_cloud import GoogleCloud
+
+ai = Genkit(
+    plugins=[
+        GoogleGenAI(),
+        GoogleCloud(
+            project_id='my-project',
+            telemetry_config={
+                'force_dev_export': False,
+                'auto_instrumentation': True,
+            },
+        ),
+    ],
+)
+```
+</CodeGroup>
+
+Features:
+- **Cloud Trace**: Distributed tracing across services
+- **Cloud Logging**: Structured logs with trace correlation
+- **Metrics**: Token usage, latency, error rates
+- **Alerts**: Set up alerts on errors or slow requests
+
+### Firebase
+
+For Firebase projects:
+
+```typescript
+import { firebase } from '@genkit-ai/firebase';
+
+const ai = genkit({
+  plugins: [
+    firebase({
+      telemetryConfig: {
+        autoInstrumentation: true,
+      },
+    }),
+  ],
+});
+```
+
+Provides:
+- Cloud Trace integration
+- Cloud Logging
+- Firebase Console integration
+
+### Third-Party Observability
+
+Support for popular platforms:
+
+<CodeGroup>
+```typescript JavaScript
+import { observability } from '@genkit-ai/observability';
+
+const ai = genkit({
+  plugins: [
+    observability({
+      sentry: {
+        dsn: process.env.SENTRY_DSN,
+      },
+      datadog: {
+        apiKey: process.env.DD_API_KEY,
+        site: 'datadoghq.com',
+      },
+    }),
+  ],
+});
+```
+
+```python Python
+from genkit.plugins.observability import Observability
+
+ai = Genkit(
+    plugins=[
+        Observability(
+            sentry={'dsn': os.getenv('SENTRY_DSN')},
+            datadog={'api_key': os.getenv('DD_API_KEY')},
+        ),
+    ],
+)
+```
+</CodeGroup>
+
+Supported platforms:
+- **Sentry**: Error tracking and performance monitoring
+- **Datadog**: APM, logs, metrics
+- **Honeycomb**: Distributed tracing and observability
+- **New Relic**: Application performance monitoring
+- **Jaeger**: Open-source distributed tracing
+- **Zipkin**: Distributed tracing system
+
+## Custom Telemetry
+
+Add custom attributes to traces:
+
+<CodeGroup>
+```typescript JavaScript
+import { runInNewSpan } from 'genkit';
+
+export const myFlow = ai.defineFlow(
+  { name: 'myFlow' },
+  async (input: string) => {
+    return await runInNewSpan(
+      {
+        metadata: { name: 'custom-step' },
+        labels: {
+          userId: input.userId,
+          requestType: 'premium',
+          version: '2.0',
+        },
+      },
+      async () => {
+        // Your logic here
+        return result;
+      }
+    );
+  }
+);
+```
+
+```python Python
+from genkit.core.tracing import run_in_new_span
+
+@ai.flow()
+async def my_flow(input: str) -> str:
+    return await run_in_new_span(
+        metadata={'name': 'custom-step'},
+        labels={
+            'user_id': input.user_id,
+            'request_type': 'premium',
+            'version': '2.0',
+        },
+        fn=lambda: your_logic_here(),
+    )
+```
+</CodeGroup>
+
+## Metrics and Token Tracking
+
+Genkit automatically tracks:
+
+**Token Usage**
+- Input tokens per request
+- Output tokens per request
+- Total tokens per flow
+- Tokens by model
+
+**Latency**
+- Model call duration
+- Tool execution time
+- End-to-end flow time
+- Time to first token (TTFT)
+
+**Costs** (when supported by model)
+- Cost per request
+- Cost per model
+- Daily/monthly spend
+
+**Error Rates**
+- Failed requests
+- Timeout errors
+- Rate limit errors
+- Model-specific errors
+
+Access in traces:
+
+```typescript
+const response = await ai.generate({
+  model: 'googleai/gemini-2.0-flash',
+  prompt: 'Hello!',
+});
+
+console.log(response.usage);
+// {
+//   inputTokens: 5,
+//   outputTokens: 12,
+//   totalTokens: 17,
+//   inputCharacters: 6,
+//   outputCharacters: 42
+// }
+
+console.log(response.latencyMs); // 1234
+```
+
+## Trace Export Formats
+
+Genkit supports multiple trace export formats:
+
+**JSON**
+```bash
+genkit trace export --format json trace-id > trace.json
+```
+
+**OpenTelemetry Protocol (OTLP)**
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4318
+```
+
+**Zipkin**
+```bash
+export OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://localhost:9411/api/v2/spans
+```
+
+**Jaeger**
+```bash
+export OTEL_EXPORTER_JAEGER_ENDPOINT=http://localhost:14250
+```
+
+## Best Practices
+
+### 1. Use Meaningful Step Names
+
+Name your steps clearly:
+
+```python
+@ai.flow()
+async def research_flow(topic: str) -> str:
+    # Good: Clear step names
+    facts = await run('gather-facts', lambda: ...)
+    analysis = await run('analyze-facts', lambda: ...)
+    summary = await run('generate-summary', lambda: ...)
+    
+    # Bad: Generic names
+    # step1 = await run('step1', lambda: ...)
+    # step2 = await run('step2', lambda: ...)
+```
+
+### 2. Add Custom Metadata
+
+Enrich traces with business context:
+
+```typescript
+const response = await ai.generate({
+  model: 'googleai/gemini-2.0-flash',
+  prompt: input,
+  metadata: {
+    userId: user.id,
+    requestId: req.id,
+    feature: 'chat',
+    tier: 'premium',
+  },
+});
+```
+
+### 3. Monitor Token Usage
+
+Set up alerts for unexpected token usage:
+
+```typescript
+if (response.usage.totalTokens > 10000) {
+  logger.warn('High token usage detected', {
+    tokens: response.usage.totalTokens,
+    userId: user.id,
+  });
+}
+```
+
+### 4. Sample in Production
+
+For high-traffic apps, sample traces:
+
+```typescript
+const ai = genkit({
+  plugins: [
+    googleCloud({
+      telemetryConfig: {
+        sampler: {
+          type: 'probabilistic',
+          probability: 0.1, // Sample 10% of traces
+        },
+      },
+    }),
+  ],
+});
+```
+
+### 5. Use Dev UI for Debugging
+
+Before deploying:
+1. Run flows in Dev UI with test data
+2. Inspect traces for unexpected behavior
+3. Verify token usage and latency
+4. Test error handling
+
+## Debugging Common Issues
+
+### High Latency
+
+**Check trace for**:
+- Slow model calls → Try faster model
+- Multiple sequential tool calls → Can any run in parallel?
+- Large prompts → Reduce context size
+- Network delays → Check model endpoint
+
+### High Token Usage
+
+**Check trace for**:
+- Long conversation history → Summarize or truncate
+- Verbose prompts → Simplify instructions
+- Unnecessary tool calls → Refine tool descriptions
+- Large tool responses → Return only needed data
+
+### Errors
+
+**Check trace for**:
+- Stack trace and error message
+- Which step failed
+- Input that caused the error
+- Model-specific error codes (rate limits, etc.)
+
+## Example: Monitoring Dashboard
+
+Query traces programmatically:
+
+```python
+from genkit.core.registry import Registry
+
+registry = ai.registry
+
+# Get recent traces
+traces = await registry.get_traces(
+    flow_name='myFlow',
+    limit=100,
+    time_range='24h',
+)
+
+# Analyze token usage
+total_tokens = sum(t.usage.total_tokens for t in traces)
+avg_latency = sum(t.latency_ms for t in traces) / len(traces)
+error_rate = len([t for t in traces if t.error]) / len(traces)
+
+print(f'Total tokens: {total_tokens}')
+print(f'Avg latency: {avg_latency}ms')
+print(f'Error rate: {error_rate * 100}%')
+```
+
+## Next Steps
+
+- Learn about [Flows](/concepts/flows) - building traceable workflows
+- Explore [Architecture](/concepts/architecture) - how tracing works internally
+- See [Plugins](/concepts/plugins) - telemetry plugin options

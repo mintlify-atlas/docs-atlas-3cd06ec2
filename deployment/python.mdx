@@ -1,0 +1,580 @@
+---
+title: Python Deployment
+description: Deploy Genkit Python applications with Flask, FastAPI, and ASGI servers
+---
+
+# Python Deployment
+
+Deploy Genkit Python applications using Flask, FastAPI, or the built-in flow server. Works with any ASGI/WSGI server and cloud platform.
+
+## Overview
+
+Genkit Python supports:
+
+- **Flask integration** - Simple web framework
+- **FastAPI integration** - Modern async framework
+- **Built-in flow server** - Zero-config ASGI server
+- **Any ASGI server** - Uvicorn, Gunicorn, Hypercorn
+
+## Installation
+
+```bash
+pip install genkit genkit-plugin-google-genai
+
+# For Flask
+pip install genkit-plugin-flask flask
+
+# For FastAPI
+pip install genkit-plugin-fastapi fastapi uvicorn
+```
+
+## Flask Deployment
+
+### 1. Create Flask App
+
+```python main.py
+import os
+from flask import Flask
+from pydantic import BaseModel, Field
+
+from genkit import Genkit
+from genkit.blocks.model import GenerateResponseWrapper
+from genkit.core.action import ActionRunContext
+from genkit.core.context import RequestData
+from genkit.plugins.flask import genkit_flask_handler
+from genkit.plugins.google_genai import GoogleAI
+
+# Initialize Genkit
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model='googleai/gemini-2.0-flash',
+)
+
+app = Flask(__name__)
+
+class JokeInput(BaseModel):
+    subject: str = Field(default='programming', description='Joke subject')
+
+# Define flow with Flask handler
+@app.post('/joke')
+@genkit_flask_handler(ai)
+@ai.flow()
+async def joke_flow(
+    input: JokeInput,
+    ctx: ActionRunContext | None = None,
+) -> GenerateResponseWrapper:
+    """Generate a joke about the subject."""
+    return await ai.generate(
+        on_chunk=ctx.send_chunk if ctx else None,
+        prompt=f'Tell me a joke about {input.subject}',
+    )
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
+```
+
+### 2. Run Locally
+
+```bash
+export GEMINI_API_KEY=your-api-key
+python main.py
+
+# Test endpoint
+curl -X POST http://localhost:8080/joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"subject": "cats"}}'
+```
+
+### 3. Flask with Context Provider
+
+```python
+from typing import cast
+
+async def auth_context_provider(
+    request: RequestData[dict[str, object]]
+) -> dict[str, object]:
+    """Extract username from Authorization header."""
+    headers_raw = request.request.get('headers') if isinstance(request.request, dict) else None
+    headers = cast(dict[str, str], headers_raw) if isinstance(headers_raw, dict) else {}
+    auth_header = headers.get('authorization')
+    return {'username': auth_header}
+
+@app.post('/secure')
+@genkit_flask_handler(ai, context_provider=auth_context_provider)
+@ai.flow()
+async def secure_flow(
+    input: JokeInput,
+    ctx: ActionRunContext | None = None,
+) -> GenerateResponseWrapper:
+    username = ctx.context.get('username') if ctx else 'unknown'
+    return await ai.generate(
+        prompt=f'Tell a joke about {input.subject} for user {username}',
+    )
+```
+
+### 4. Deploy Flask to Production
+
+```bash
+# Install production server
+pip install gunicorn
+
+# Run with Gunicorn
+gunicorn main:app \
+  --workers 4 \
+  --bind 0.0.0.0:8080 \
+  --timeout 300
+```
+
+## FastAPI Deployment
+
+### 1. Create FastAPI App
+
+```python main.py
+import os
+from pathlib import Path
+from typing import Literal, Awaitable
+import uvicorn
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+from typing_extensions import Never
+
+from genkit import Genkit, Input, Output
+from genkit.ai import FlowWrapper
+from genkit.plugins.fastapi import genkit_fastapi_handler
+from genkit.plugins.google_genai import GoogleAI
+
+# Initialize Genkit
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model='googleai/gemini-2.0-flash',
+)
+
+app = FastAPI(title='Genkit App')
+
+class JokeInput(BaseModel):
+    subject: str = Field(default='programming')
+
+class JokeOutput(BaseModel):
+    text: str
+
+@app.get('/health')
+async def health():
+    return {'status': 'healthy'}
+
+# Define flow
+@ai.flow()
+async def joke_flow(input: JokeInput) -> str:
+    """Generate a joke."""
+    response = await ai.generate(
+        prompt=f'Tell me a joke about {input.subject}'
+    )
+    return response.text
+
+# Regular endpoint
+@app.post('/joke', response_model=JokeOutput)
+async def joke_endpoint(request: JokeInput) -> JokeOutput:
+    result = await joke_flow(request)
+    return JokeOutput(text=result)
+
+# Genkit flow endpoint with streaming support
+@app.post('/flow/joke', response_model=None)
+@genkit_fastapi_handler(ai)
+def flow_joke() -> FlowWrapper[..., Awaitable[str], str, Never]:
+    """Expose flow directly via {"data": {"subject": "..."}}."""
+    return joke_flow
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=8080)
+```
+
+### 2. Run FastAPI
+
+```bash
+export GEMINI_API_KEY=your-api-key
+uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+
+# Test regular endpoint
+curl -X POST http://localhost:8080/joke \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "cats"}'
+
+# Test flow endpoint
+curl -X POST http://localhost:8080/flow/joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"subject": "cats"}}'
+```
+
+### 3. Deploy FastAPI to Production
+
+```bash
+# Production server
+uvicorn main:app \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --workers 4
+
+# Or with Gunicorn + Uvicorn workers
+gunicorn main:app \
+  --workers 4 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8080
+```
+
+## Built-in Flow Server
+
+Use Genkit's built-in ASGI server to expose all flows automatically:
+
+```python main.py
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleAI
+from genkit.server import create_flows_asgi_app
+
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model='googleai/gemini-2.0-flash',
+)
+
+@ai.flow()
+async def joke_flow(subject: str) -> str:
+    response = await ai.generate(
+        prompt=f'Tell me a joke about {subject}'
+    )
+    return response.text
+
+@ai.flow()
+async def summarize_flow(text: str) -> str:
+    response = await ai.generate(
+        prompt=f'Summarize this text: {text}'
+    )
+    return response.text
+
+# Create ASGI app that exposes all flows
+app = create_flows_asgi_app(
+    registry=ai.registry,
+)
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8080)
+```
+
+This automatically exposes:
+- `POST /joke_flow`
+- `POST /summarize_flow`
+
+### With Authentication
+
+```python
+from genkit.server.context_providers import api_key
+
+app = create_flows_asgi_app(
+    registry=ai.registry,
+    context_providers=[
+        api_key('your-secret-key'),
+    ],
+)
+```
+
+Clients must include `Authorization: Bearer your-secret-key` header.
+
+## Dockerfile
+
+### Flask Dockerfile
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["gunicorn", "main:app", "--workers", "4", "--bind", "0.0.0.0:8080", "--timeout", "300"]
+```
+
+### FastAPI Dockerfile
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+## Deployment Platforms
+
+### Google Cloud Run
+
+```bash
+gcloud run deploy genkit-python-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your-key
+```
+
+### Fly.io
+
+```toml fly.toml
+app = "genkit-python-app"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+```
+
+```bash
+flyctl launch
+flyctl secrets set GEMINI_API_KEY=your-key
+flyctl deploy
+```
+
+### Heroku
+
+```text Procfile
+web: gunicorn main:app --workers 4 --timeout 300
+```
+
+```bash
+heroku create genkit-python-app
+heroku config:set GEMINI_API_KEY=your-key
+git push heroku main
+```
+
+### Railway
+
+```bash
+railway login
+railway init
+railway up
+railway variables set GEMINI_API_KEY=your-key
+```
+
+### AWS Lambda (with Mangum)
+
+```python lambda_handler.py
+from mangum import Mangum
+from main import app  # Your FastAPI app
+
+handler = Mangum(app)
+```
+
+```bash
+pip install mangum
+# Deploy with AWS SAM, Serverless, or Zappa
+```
+
+## Production Best Practices
+
+### 1. Use Environment Variables
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ai = Genkit(
+    plugins=[GoogleAI()],  # Reads GEMINI_API_KEY from env
+)
+```
+
+### 2. Error Handling
+
+```python
+from fastapi import HTTPException
+
+@app.post('/joke')
+async def joke_endpoint(subject: str):
+    try:
+        result = await joke_flow(subject)
+        return {'joke': result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+### 3. Request Validation
+
+```python
+from pydantic import BaseModel, Field, validator
+
+class JokeInput(BaseModel):
+    subject: str = Field(..., min_length=1, max_length=100)
+    
+    @validator('subject')
+    def validate_subject(cls, v):
+        if not v.strip():
+            raise ValueError('Subject cannot be empty')
+        return v
+```
+
+### 4. Rate Limiting
+
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.post('/joke')
+@limiter.limit("5/minute")
+async def joke_endpoint(request: Request, subject: str):
+    # ...
+```
+
+### 5. Health Checks
+
+```python
+@app.get('/health')
+async def health():
+    return {
+        'status': 'healthy',
+        'timestamp': time.time(),
+    }
+
+@app.get('/readiness')
+async def readiness():
+    # Check dependencies
+    return {'ready': True}
+```
+
+### 6. Logging
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
+
+logger = logging.getLogger(__name__)
+
+@ai.flow()
+async def joke_flow(subject: str) -> str:
+    logger.info(f'Generating joke for subject: {subject}')
+    # ...
+```
+
+## Monitoring
+
+### Google Cloud Telemetry
+
+```python
+from genkit.plugins.google_cloud import GoogleCloud
+
+ai = Genkit(
+    plugins=[
+        GoogleAI(),
+        GoogleCloud(project_id='your-project'),
+    ],
+)
+```
+
+Traces are exported to Cloud Trace automatically.
+
+### Structured Logging
+
+```python
+import json
+import sys
+
+def json_logger(message: str, **kwargs):
+    log_entry = {
+        'message': message,
+        'severity': kwargs.get('severity', 'INFO'),
+        **kwargs
+    }
+    print(json.dumps(log_entry), file=sys.stdout)
+
+json_logger('Request received', path='/joke', method='POST')
+```
+
+## Complete Examples
+
+See full Python examples in the repository:
+
+```bash
+# Flask example
+cd py/samples/web-flask-hello
+uv run src/main.py
+
+# FastAPI example
+cd py/samples/web-fastapi-bugbot
+uv run src/main.py
+```
+
+## Troubleshooting
+
+### Import Errors
+
+**Problem:** `ModuleNotFoundError: No module named 'genkit'`
+
+**Solution:** Install dependencies:
+
+```bash
+pip install genkit genkit-plugin-google-genai
+```
+
+### Port Already in Use
+
+**Problem:** `Address already in use`
+
+**Solution:** Change port or kill process:
+
+```bash
+lsof -ti:8080 | xargs kill -9
+```
+
+### Streaming Not Working
+
+**Problem:** Streaming responses not received.
+
+**Solution:** Ensure proper content-type:
+
+```python
+from starlette.responses import StreamingResponse
+
+@app.post('/stream')
+async def stream_endpoint():
+    async def generate():
+        # ...
+    return StreamingResponse(generate(), media_type='text/event-stream')
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Flask Plugin" icon="flask" href="/plugins/flask">
+    Full Flask plugin documentation
+  </Card>
+  <Card title="Cloud Run" icon="docker" href="/deployment/cloud-run">
+    Deploy to Google Cloud Run
+  </Card>
+</CardGroup>

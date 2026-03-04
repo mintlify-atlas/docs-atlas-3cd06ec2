@@ -1,0 +1,356 @@
+---
+title: 'Vertex AI Plugin'
+description: 'Use Google Cloud Vertex AI models with Genkit'
+---
+
+# Vertex AI Plugin
+
+The Vertex AI plugin is now part of the unified `@genkit-ai/google-genai` package, which provides access to both Google AI (Gemini Developer API) and Vertex AI models.
+
+<Note>
+This page documents the Vertex AI functionality within the `@genkit-ai/google-genai` plugin. For the complete plugin documentation including Google AI features, see [Google GenAI Plugin](/plugins/google-genai).
+</Note>
+
+## Installation
+
+```bash
+npm install @genkit-ai/google-genai
+```
+
+## Quick Start
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()],
+  model: vertexAI.model('gemini-2.5-flash'),
+});
+
+const { text } = await ai.generate('Hello from Vertex AI!');
+console.log(text);
+```
+
+## Authentication
+
+Vertex AI supports two authentication methods:
+
+### Application Default Credentials (Production)
+
+The standard method for production deployments. Uses credentials from:
+- Service account on Google Cloud Platform
+- User credentials from `gcloud auth application-default login` locally
+
+**Requirements:**
+- Google Cloud Project with billing enabled
+- Vertex AI API enabled
+- Proper IAM permissions
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    vertexAI({ 
+      location: 'us-central1',  // Regional endpoint
+      // projectId: 'my-project',  // Optional, auto-detected from ADC
+    }),
+  ],
+});
+```
+
+### Vertex AI Express Mode (Development)
+
+Streamlined access using just an API key, without billing setup. Ideal for:
+- Quick experimentation
+- Learning and prototyping
+- Generous free tier quotas
+
+[Learn more about Express Mode](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview)
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    vertexAI({ 
+      apiKey: process.env.VERTEX_EXPRESS_API_KEY,
+    }),
+  ],
+});
+```
+
+**Note:** When using Express Mode, don't provide `projectId` or `location`.
+
+## Available Models
+
+### Gemini Models
+- `gemini-2.5-flash` - Fast, efficient for most tasks
+- `gemini-2.5-pro` - Advanced reasoning and complex tasks
+- `gemini-1.5-flash` - Previous generation fast model
+- `gemini-1.5-pro` - Previous generation advanced model
+
+### Image Generation
+- `imagen-3.0-generate-002` - High-quality image generation
+
+### Music Generation
+- `lyria-002` - AI music generation (Vertex AI exclusive)
+
+### Embeddings
+- `text-embedding-005` - Text embeddings
+
+## Usage Examples
+
+### Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI({ location: 'us-central1' })],
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Explain quantum computing in simple terms.',
+});
+
+console.log(response.text());
+```
+
+### Multimodal Input
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: [
+    { text: 'What is in this image?' },
+    { media: { url: 'https://example.com/image.jpg' } },
+  ],
+});
+
+console.log(response.text());
+```
+
+### Structured Output
+
+```typescript
+import { z } from 'genkit';
+
+const RecipeSchema = z.object({
+  name: z.string(),
+  ingredients: z.array(z.string()),
+  instructions: z.array(z.string()),
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Create a recipe for chocolate chip cookies',
+  output: { schema: RecipeSchema },
+});
+
+console.log(response.output);
+```
+
+### Text Embeddings
+
+```typescript
+const embeddings = await ai.embed({
+  embedder: vertexAI.embedder('text-embedding-005'),
+  content: 'Text to embed for semantic search',
+});
+
+console.log(embeddings[0].embedding);
+```
+
+### Image Generation with Imagen
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('imagen-3.0-generate-002'),
+  prompt: 'A serene landscape with mountains and a lake at sunset',
+});
+
+const image = response.media();
+console.log('Image URL:', image.url);
+```
+
+### Music Generation with Lyria
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('lyria-002'),
+  prompt: 'An upbeat electronic dance track with synthesizers',
+});
+
+const audio = response.media();
+console.log('Audio URL:', audio.url);
+```
+
+### Using in Flows
+
+```typescript
+import { z } from 'genkit';
+
+const summarizeFlow = ai.defineFlow(
+  {
+    name: 'summarizeDocument',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (document) => {
+    const response = await ai.generate({
+      model: vertexAI.model('gemini-2.5-flash'),
+      prompt: `Summarize this document: ${document}`,
+    });
+    return response.text();
+  }
+);
+
+const summary = await summarizeFlow('Long document text...');
+```
+
+## Configuration Options
+
+### Plugin Configuration
+
+```typescript
+vertexAI({
+  // For ADC authentication:
+  location: 'us-central1',     // GCP region (required for ADC)
+  projectId: 'my-project',     // GCP project ID (optional, auto-detected)
+  
+  // For Express Mode:
+  apiKey: 'your-api-key',      // API key (don't use with location/projectId)
+})
+```
+
+### Model Configuration
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Your prompt',
+  config: {
+    temperature: 0.7,           // Randomness (0.0-1.0)
+    maxOutputTokens: 1024,      // Max response length
+    topK: 40,                   // Top-K sampling
+    topP: 0.95,                 // Nucleus sampling
+    stopSequences: ['END'],     // Stop generation sequences
+  },
+});
+```
+
+## Vertex AI Features
+
+Vertex AI offers enterprise features beyond the Gemini Developer API:
+
+### Enterprise Capabilities
+- **IAM Integration** - Google Cloud IAM for access control
+- **VPC Support** - Private networking options
+- **Audit Logging** - Comprehensive audit trails
+- **Data Residency** - Regional data processing
+- **SLA Support** - Enterprise service level agreements
+
+### Advanced Features
+- **Fine-tuning** - Custom model training
+- **Model Garden** - Access to multiple model families
+- **Lyria Music Generation** - AI-powered music creation
+- **Batch Prediction** - Efficient bulk processing
+- **Model Monitoring** - Performance tracking
+
+### Pricing
+
+Vertex AI uses Google Cloud billing. See [Vertex AI Pricing](https://cloud.google.com/vertex-ai/pricing) for details.
+
+Express Mode offers generous free tier quotas for experimentation.
+
+## Best Practices
+
+### Development vs Production
+
+**Development:**
+```typescript
+// Use Express Mode for quick prototyping
+const ai = genkit({
+  plugins: [
+    vertexAI({ apiKey: process.env.VERTEX_EXPRESS_API_KEY }),
+  ],
+});
+```
+
+**Production:**
+```typescript
+// Use ADC for production deployments
+const ai = genkit({
+  plugins: [
+    vertexAI({ 
+      location: 'us-central1',
+      // projectId auto-detected from environment
+    }),
+  ],
+});
+```
+
+### Error Handling
+
+```typescript
+try {
+  const response = await ai.generate({
+    model: vertexAI.model('gemini-2.5-flash'),
+    prompt: 'Your prompt',
+  });
+  console.log(response.text());
+} catch (error) {
+  console.error('Vertex AI error:', error);
+  // Handle quota limits, authentication errors, etc.
+}
+```
+
+### Rate Limiting
+
+Implement retry logic for production applications:
+
+```typescript
+import { retry } from 'genkit/model/middleware';
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: 'Your prompt',
+  use: [
+    retry({
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      backoffFactor: 2,
+    }),
+  ],
+});
+```
+
+## Migration from Legacy Plugin
+
+If migrating from the old `@genkit-ai/vertexai` package:
+
+**Old:**
+```typescript
+import { vertexAI } from '@genkit-ai/vertexai';
+```
+
+**New:**
+```typescript
+import { vertexAI } from '@genkit-ai/google-genai';
+```
+
+The API remains compatible for most use cases.
+
+## Links
+
+- [Vertex AI Documentation](https://cloud.google.com/vertex-ai)
+- [Vertex AI Express Mode](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview)
+- [Vertex AI Pricing](https://cloud.google.com/vertex-ai/pricing)
+- [Google GenAI Plugin](/plugins/google-genai) - Full plugin documentation
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/google-genai)

@@ -1,0 +1,286 @@
+---
+title: Examples and Samples
+description: Explore Genkit examples and sample applications across JavaScript, Go, and Python
+---
+
+Genkit provides a comprehensive collection of examples and sample applications to help you get started and learn different features of the framework.
+
+## Interactive Examples
+
+Play with AI sample apps with visualizations of the Genkit code that powers them, at no cost to you.
+
+<Card title="Genkit by Example" icon="rocket" href="https://examples.genkit.dev">
+  Explore interactive examples in your browser
+</Card>
+
+## Sample Applications by Language
+
+### JavaScript/TypeScript Samples
+
+The JavaScript samples demonstrate various Genkit features and use cases:
+
+#### Basic Samples
+
+<CardGroup cols={2}>
+  <Card title="Coffee Shop" icon="mug-hot" href="https://github.com/firebase/genkit/tree/main/samples/js-coffee-shop">
+    Simple "AI barista" demonstrating basic LLM usage
+  </Card>
+  
+  <Card title="Gemini Basics" icon="gem" href="https://github.com/firebase/genkit/tree/main/samples/js-gemini">
+    Getting started with Google's Gemini models
+  </Card>
+  
+  <Card title="OpenAI Integration" icon="robot" href="https://github.com/firebase/genkit/tree/main/samples/js-openai">
+    Using OpenAI models with Genkit
+  </Card>
+  
+  <Card title="Prompting Techniques" icon="message" href="https://github.com/firebase/genkit/tree/main/samples/js-prompts">
+    Various prompting patterns and techniques
+  </Card>
+</CardGroup>
+
+#### Intermediate Samples
+
+<CardGroup cols={2}>
+  <Card title="Menu Understanding" icon="utensils" href="https://github.com/firebase/genkit/tree/main/samples/js-menu">
+    Progressive restaurant menu app with 5 iterations:
+    - Basic prompts with templates
+    - Flows with strong schemas and tools
+    - Multi-turn chat with session history
+    - Vector database and RAG
+    - Vision model for photo menu ingestion
+  </Card>
+  
+  <Card title="Character Generator" icon="dice-d20" href="https://github.com/firebase/genkit/tree/main/samples/js-character-generator">
+    RPG character generation with structured output
+  </Card>
+  
+  <Card title="Chatbot" icon="comments" href="https://github.com/firebase/genkit/tree/main/samples/js-chatbot">
+    Full-stack chatbot with JavaScript frontend and multi-model support
+  </Card>
+  
+  <Card title="Angular Streaming" icon="angle-right" href="https://github.com/firebase/genkit/tree/main/samples/js-angular">
+    Angular application with streaming AI responses
+  </Card>
+</CardGroup>
+
+#### Advanced Samples
+
+<CardGroup cols={1}>
+  <Card title="School Agent System" icon="school" href="https://github.com/firebase/genkit/tree/main/samples/js-schoolAgent">
+    Multi-agent architecture with routing:
+    - **RoutingAgent**: Main entry point and router
+    - **AttendanceAgent**: Specialized for absence/tardy reporting  
+    - **GradesAgent**: Manages academic performance queries
+    
+    Demonstrates agent handoff, specialized tools, and separation of concerns
+  </Card>
+</CardGroup>
+
+### Go Samples
+
+The Go SDK includes extensive samples covering various capabilities:
+
+#### Basic Go Samples
+
+- **basic**: Simple text generation
+- **basic-prompts**: Working with prompt templates
+- **basic-structured**: Structured output generation
+- **anthropic**: Using Anthropic Claude models
+- **coffee-shop**: AI barista example in Go
+
+#### Model Integration Samples
+
+- **gemini**: Google Gemini integration
+- **cache-gemini**: Context caching with Gemini
+- **code-execution-gemini**: Server-side code execution
+- **imagen**: Image generation with Imagen
+- **imagen-gemini**: Combined image and text generation
+- **compat_oai**: OpenAI-compatible API integration (Anthropic, Custom, OpenAI)
+
+#### Advanced Go Samples
+
+- **flow-sample1**: Building flows
+- **formats**: Output formatting examples
+- **intermediate-interrupts**: Human-in-the-loop workflows
+- **durable-streaming**: Streaming with durability
+- **durable-streaming-firestore**: Streaming with Firestore backend
+- **firebase-retrievers**: Firebase vector search integration
+- **files-api-vision**: Vision with Files API
+- **menu**: Restaurant menu understanding (Go port)
+
+#### MCP (Model Context Protocol) Samples
+
+- **mcp-client**: MCP client implementation
+- **mcp-server**: MCP server with client example
+- **mcp-ception**: Advanced MCP patterns
+- **mcp-git-pr-explainer**: GitHub PR analysis using MCP
+
+<Card title="View All Go Samples" icon="golang" href="https://github.com/firebase/genkit/tree/main/go/samples">
+  Browse the complete Go samples directory
+</Card>
+
+### Python Samples (Alpha)
+
+Python samples are organized by category with consistent structure:
+
+#### Model Provider Samples
+
+<AccordionGroup>
+  <Accordion title="Google AI & Vertex AI">
+    - **provider-google-genai-hello**: Gemini with Google AI
+    - **provider-google-genai-vertexai-hello**: Gemini with Vertex AI
+    - **provider-google-genai-code-execution**: Server-side code execution
+    - **provider-google-genai-context-caching**: Context caching for long prompts
+    - **provider-google-genai-vertexai-image**: Imagen image generation
+    - **provider-google-genai-media-models-demo**: TTS, Veo, Lyria, Imagen, editing
+  </Accordion>
+  
+  <Accordion title="Third-Party Providers">
+    - **provider-anthropic-hello**: Claude models
+    - **provider-amazon-bedrock-hello**: AWS Bedrock (Claude, Llama, Nova)
+    - **provider-microsoft-foundry-hello**: Azure AI Foundry + Application Insights
+    - **provider-ollama-hello**: Local models with Ollama
+    - **provider-compat-oai-hello**: OpenAI-compatible APIs
+    - **provider-deepseek-hello**: DeepSeek V3 and R1
+    - **provider-xai-hello**: Grok models
+    - **provider-cloudflare-workers-ai-hello**: Cloudflare Workers AI
+    - **provider-mistral-hello**: Mistral models
+    - **provider-huggingface-hello**: HuggingFace Inference API
+    - **provider-cohere-hello**: Cohere models and embeddings
+  </Accordion>
+  
+  <Accordion title="Specialized Features">
+    - **provider-vertex-ai-model-garden**: Third-party models via Model Garden
+    - **provider-vertex-ai-rerank-eval**: Rerankers and evaluators
+    - **provider-vertex-ai-vector-search-bigquery**: BigQuery with vectors
+    - **provider-vertex-ai-vector-search-firestore**: Firestore with vectors
+    - **provider-firestore-retriever**: Firestore vector search
+    - **provider-checks-hello**: Google Checks AI safety guardrails
+    - **provider-observability-hello**: Sentry, Honeycomb, Datadog, Grafana, Axiom
+  </Accordion>
+</AccordionGroup>
+
+#### Framework Feature Samples
+
+- **framework-context-demo**: Context propagation through flows
+- **framework-dynamic-tools-demo**: Dynamic tool registration
+- **framework-evaluator-demo**: Custom evaluators and RAGAS
+- **framework-format-demo**: Output formatting and schemas  
+- **framework-middleware-demo**: Custom retry and logging middleware
+- **framework-prompt-demo**: Dotprompt features (picoschema, roles, media, variants, helpers)
+- **framework-realtime-tracing-demo**: Real-time tracing visualization
+- **framework-restaurant-demo**: Restaurant ordering with tools and RAG
+- **framework-tool-interrupts**: Human-in-the-loop tool approval
+
+#### Web Framework Samples
+
+- **web-endpoints-hello**: FastAPI, Litestar, Quart, gRPC endpoints
+- **web-fastapi-bugbot**: AI code reviewer with streaming SSE
+- **web-flask-hello**: Flask HTTP endpoints
+- **web-multi-server**: Multiple Genkit servers (Litestar, Starlette)
+- **web-short-n-long**: ASGI deployment with long-running flows
+
+<Card title="View All Python Samples" icon="python" href="https://github.com/firebase/genkit/tree/main/py/samples">
+  Browse the complete Python samples directory with detailed README
+</Card>
+
+## Running Samples
+
+### JavaScript/TypeScript
+
+```bash
+cd samples/<sample-name>
+npm install
+export GEMINI_API_KEY=your_api_key  # or other provider key
+npm run genkit:dev
+```
+
+Access the Developer UI at http://localhost:4000
+
+### Go
+
+```bash
+cd go/samples/<sample-name>
+go mod tidy
+export GOOGLE_GENAI_API_KEY=your_api_key
+genkit start -- go run .
+```
+
+Access the Developer UI at http://localhost:4000
+
+### Python
+
+```bash
+cd py/samples/<sample-name>
+./run.sh  # Starts DevUI and runs with hot reload
+```
+
+Each Python sample includes a `run.sh` script with automatic dependency installation and hot reloading.
+
+## Try in Cloud IDEs
+
+### IDX (Google)
+
+Try JavaScript samples in Google's Cloud-Based IDE:
+
+<a href="https://idx.google.com/new?template=https%3A%2F%2Fgithub.com%2Ffirebase%2Fgenkit%2Ftree%2Fmain%2Fsamples">
+  <img height="32" alt="Try in IDX" src="https://cdn.idx.dev/btn/try_purple_32.svg" />
+</a>
+
+### Firebase Studio
+
+Skip local setup entirely and try Genkit using Firebase Studio:
+
+<a href="https://studio.firebase.google.com/new/genkit">
+  <img height="32" alt="Open in Firebase Studio" src="https://cdn.firebasestudio.dev/btn/open_bright_32.svg" />
+</a>
+
+## Sample Categories
+
+### By Complexity
+
+- **Basic**: Simple single-feature demonstrations (coffee-shop, basic prompts, simple generation)
+- **Intermediate**: Multi-feature integration (menu app, chatbot, character generator, streaming)
+- **Advanced**: Complex architectures (multi-agent systems, RAG pipelines, MCP integration)
+
+### By Feature
+
+- **Text Generation**: coffee-shop, gemini, openai, prompts
+- **Structured Output**: character-generator, basic-structured, formats
+- **Tool Calling**: menu (step 2+), schoolAgent, framework-dynamic-tools-demo
+- **Chat/Sessions**: chatbot, angular, framework-restaurant-demo
+- **RAG**: menu (step 4), framework-restaurant-demo
+- **Multimodal**: menu (step 5), files-api-vision, imagen samples, media-models-demo
+- **Streaming**: angular, chatbot, durable-streaming, fastapi-bugbot
+- **Multi-Agent**: schoolAgent
+- **Evaluation**: framework-evaluator-demo, vertex-ai-rerank-eval
+
+## Contributing Examples
+
+We welcome new examples! See our [Contributing Guide](/resources/contributing) for guidelines on:
+
+- Example structure and naming conventions
+- Documentation requirements  
+- Testing and validation
+- Submitting pull requests
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Community Examples" icon="users" href="https://github.com/genkit-ai/samples">
+    Community-contributed samples and examples
+  </Card>
+  
+  <Card title="Documentation" icon="book" href="https://genkit.dev/docs">
+    Official Genkit documentation
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/firebase/genkit/discussions">
+    Ask questions and share your examples
+  </Card>
+  
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/qXt5zzQKpc">
+    Get help and connect with other developers
+  </Card>
+</CardGroup>

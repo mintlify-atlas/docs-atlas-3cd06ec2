@@ -1,0 +1,592 @@
+---
+title: 'Creating Plugins'
+description: 'Learn how to create custom Genkit plugins to extend the framework'
+---
+
+# Creating Plugins
+
+Genkit plugins are modular extensions that add new capabilities to the framework. You can create custom plugins to integrate new model providers, vector stores, or any other functionality.
+
+## Plugin Architecture
+
+A Genkit plugin implements the `PluginProvider` interface:
+
+```typescript
+export interface PluginProvider {
+  name: string;
+  initializer: () =>
+    | InitializedPlugin
+    | void
+    | Promise<InitializedPlugin | void>;
+  resolver?: (action: ActionType, target: string) => Promise<void>;
+  listActions?: () => Promise<ActionMetadata[]>;
+}
+
+export interface InitializedPlugin {
+  models?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  retrievers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  embedders?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  indexers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  evaluators?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+}
+```
+
+## Plugin Types
+
+### Plugin API v1 (Legacy)
+
+The original plugin API uses `genkitPlugin`:
+
+```typescript
+import { genkitPlugin, type GenkitPlugin } from 'genkit/plugin';
+import type { Genkit } from 'genkit';
+
+export function myPlugin(options?: MyPluginOptions): GenkitPlugin {
+  return genkitPlugin(
+    'my-plugin',
+    async (ai: Genkit) => {
+      // Register actions with the Genkit instance
+      ai.defineModel(/* ... */);
+      ai.defineRetriever(/* ... */);
+    },
+    async (ai, actionType, actionName) => {
+      // Optional: Resolve actions dynamically
+    },
+    async () => {
+      // Optional: List available actions
+      return [];
+    }
+  );
+}
+```
+
+### Plugin API v2 (Recommended)
+
+The new plugin API supports direct model usage without Genkit instance:
+
+```typescript
+import { genkitPluginV2, type GenkitPluginV2 } from 'genkit/plugin';
+import { ModelAction } from 'genkit/model';
+import { ActionType } from 'genkit/registry';
+
+function myPlugin(options?: MyPluginOptions): GenkitPluginV2 {
+  return genkitPluginV2({
+    name: 'my-plugin',
+    init: async () => {
+      // Return actions to register
+      const actions: ModelAction[] = [];
+      for (const modelName of AVAILABLE_MODELS) {
+        actions.push(createModel(modelName));
+      }
+      return actions;
+    },
+    resolve: (actionType: ActionType, name: string) => {
+      // Dynamically create actions on demand
+      if (actionType === 'model') {
+        return createModel(name);
+      }
+      return undefined;
+    },
+    list: async () => {
+      // List available actions for discovery
+      return await listModels();
+    },
+  });
+}
+```
+
+## Creating a Model Provider Plugin
+
+### Basic Model Plugin
+
+```typescript
+import {
+  modelRef,
+  type ModelReference,
+  type GenerateRequest,
+  type GenerateResponseData,
+} from 'genkit/model';
+import { genkitPluginV2, type GenkitPluginV2 } from 'genkit/plugin';
+import { z } from 'genkit';
+
+interface MyProviderOptions {
+  apiKey?: string;
+}
+
+const MyProviderConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().optional(),
+});
+
+function myProviderPlugin(options?: MyProviderOptions): GenkitPluginV2 {
+  const apiKey = options?.apiKey || process.env.MY_PROVIDER_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('API key required');
+  }
+
+  return genkitPluginV2({
+    name: 'my-provider',
+    init: async () => {
+      return [
+        createModel('my-model-1', apiKey),
+        createModel('my-model-2', apiKey),
+      ];
+    },
+  });
+}
+
+function createModel(name: string, apiKey: string) {
+  return {
+    name: `my-provider/${name}`,
+    label: `My Provider - ${name}`,
+    configSchema: MyProviderConfigSchema,
+    info: {
+      supports: {
+        multiturn: true,
+        media: false,
+        tools: true,
+        systemRole: true,
+      },
+    },
+    async generate(
+      input: GenerateRequest,
+      streamingCallback?: (chunk: any) => void
+    ): Promise<GenerateResponseData> {
+      // Call your model API
+      const response = await fetch('https://api.myprovider.com/generate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: input.messages,
+          config: input.config,
+        }),
+      });
+
+      const data = await response.json();
+
+      return {
+        message: {
+          role: 'model',
+          content: [{ text: data.output }],
+        },
+        usage: {
+          inputTokens: data.usage.input_tokens,
+          outputTokens: data.usage.output_tokens,
+        },
+        finishReason: 'stop',
+      };
+    },
+  };
+}
+
+// Export with model reference helper
+export const myProvider = myProviderPlugin as typeof myProviderPlugin & {
+  model: (name: string, config?: any) => ModelReference<typeof MyProviderConfigSchema>;
+};
+
+myProvider.model = (name: string, config?: any) => {
+  return modelRef({
+    name: `my-provider/${name}`,
+    config,
+    configSchema: MyProviderConfigSchema,
+  });
+};
+```
+
+## Creating a Vector Store Plugin
+
+### Retriever and Indexer Plugin
+
+```typescript
+import {
+  retrieverRef,
+  indexerRef,
+  type Document,
+  type Genkit,
+} from 'genkit';
+import { genkitPlugin, type GenkitPlugin } from 'genkit/plugin';
+import { z } from 'genkit';
+import type { EmbedderArgument } from 'genkit/embedder';
+
+interface VectorStoreConfig {
+  collectionName: string;
+  embedder: EmbedderArgument<any>;
+  connectionUrl?: string;
+}
+
+const RetrieverOptionsSchema = z.object({
+  k: z.number().optional(),
+  filter: z.record(z.any()).optional(),
+});
+
+export function myVectorStore(
+  configs: VectorStoreConfig[]
+): GenkitPlugin {
+  return genkitPlugin('my-vectorstore', async (ai: Genkit) => {
+    configs.forEach(config => {
+      defineRetriever(ai, config);
+      defineIndexer(ai, config);
+    });
+  });
+}
+
+function defineRetriever(
+  ai: Genkit,
+  config: VectorStoreConfig
+) {
+  return ai.defineRetriever(
+    {
+      name: `my-vectorstore/${config.collectionName}`,
+      configSchema: RetrieverOptionsSchema,
+    },
+    async (query, options) => {
+      // 1. Embed the query
+      const embeddings = await ai.embed({
+        embedder: config.embedder,
+        content: query,
+      });
+
+      // 2. Search your vector store
+      const results = await searchVectorStore({
+        collection: config.collectionName,
+        vector: embeddings[0].embedding,
+        limit: options?.k || 10,
+        filter: options?.filter,
+      });
+
+      // 3. Return documents
+      return {
+        documents: results.map(r => ({
+          content: [{ text: r.content }],
+          metadata: r.metadata,
+        })),
+      };
+    }
+  );
+}
+
+function defineIndexer(
+  ai: Genkit,
+  config: VectorStoreConfig
+) {
+  return ai.defineIndexer(
+    {
+      name: `my-vectorstore/${config.collectionName}`,
+    },
+    async (docs) => {
+      // 1. Embed all documents
+      const embeddings = await Promise.all(
+        docs.map(doc =>
+          ai.embed({
+            embedder: config.embedder,
+            content: doc,
+          })
+        )
+      );
+
+      // 2. Prepare records for insertion
+      const records = embeddings.flatMap((embeddingList, docIndex) => {
+        const doc = docs[docIndex];
+        return embeddingList.map(embedding => ({
+          id: generateId(),
+          vector: embedding.embedding,
+          content: doc.text,
+          metadata: doc.metadata,
+        }));
+      });
+
+      // 3. Insert into vector store
+      await insertVectors({
+        collection: config.collectionName,
+        records: records,
+      });
+    }
+  );
+}
+
+// Helper reference functions
+export const myVectorStoreRetrieverRef = (params: {
+  collectionName: string;
+}) => {
+  return retrieverRef({
+    name: `my-vectorstore/${params.collectionName}`,
+    configSchema: RetrieverOptionsSchema,
+  });
+};
+
+export const myVectorStoreIndexerRef = (params: {
+  collectionName: string;
+}) => {
+  return indexerRef({
+    name: `my-vectorstore/${params.collectionName}`,
+  });
+};
+
+// Mock implementations
+async function searchVectorStore(params: any) {
+  // Implement your vector search
+  return [];
+}
+
+async function insertVectors(params: any) {
+  // Implement your vector insertion
+}
+
+function generateId(): string {
+  return Math.random().toString(36).substring(7);
+}
+```
+
+## Creating an Embedder Plugin
+
+```typescript
+import {
+  embedderRef,
+  type EmbedderReference,
+  type Genkit,
+} from 'genkit';
+import { genkitPlugin, type GenkitPlugin } from 'genkit/plugin';
+import { z } from 'genkit';
+
+interface EmbedderConfig {
+  name: string;
+  dimensions: number;
+  apiKey?: string;
+}
+
+export function myEmbedderPlugin(
+  configs: EmbedderConfig[]
+): GenkitPlugin {
+  return genkitPlugin('my-embedder', async (ai: Genkit) => {
+    configs.forEach(config => {
+      ai.defineEmbedder(
+        {
+          name: `my-embedder/${config.name}`,
+          info: {
+            dimensions: config.dimensions,
+            label: `My Embedder - ${config.name}`,
+          },
+        },
+        async (input) => {
+          // Call your embedding API
+          const response = await fetch('https://api.myembedder.com/embed', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${config.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              texts: input.content.map(c => c.text),
+            }),
+          });
+
+          const data = await response.json();
+
+          return {
+            embeddings: data.embeddings.map((embedding: number[]) => ({
+              embedding,
+            })),
+          };
+        }
+      );
+    });
+  });
+}
+
+// Helper reference function
+export const myEmbedderRef = (params: {
+  name: string;
+}) => {
+  return embedderRef({
+    name: `my-embedder/${params.name}`,
+  });
+};
+```
+
+## Plugin Lifecycle
+
+### Initialization Phase
+
+1. **User configures plugin** - When calling `genkit({ plugins: [...] })`
+2. **Plugin initializer runs** - The `init` function is called
+3. **Actions registered** - Models, retrievers, etc. are registered with Genkit
+
+### Resolution Phase (Optional)
+
+1. **User references action** - e.g., `myProvider.model('unknown-model')`
+2. **Resolver called** - The `resolve` function tries to create the action dynamically
+3. **Action returned** - If successful, action is used immediately
+
+### Listing Phase (Optional)
+
+1. **Developer UI queries** - Or programmatic discovery
+2. **List function called** - Returns metadata about available actions
+3. **Actions displayed** - User can see what's available
+
+## Best Practices
+
+### 1. Use TypeScript
+
+```typescript
+// Define clear interfaces
+interface MyPluginOptions {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+// Export typed plugin
+export type MyPlugin = {
+  (options?: MyPluginOptions): GenkitPluginV2;
+  model: (name: string) => ModelReference;
+};
+```
+
+### 2. Handle Authentication
+
+```typescript
+function myPlugin(options?: MyPluginOptions): GenkitPluginV2 {
+  const apiKey = options?.apiKey || process.env.MY_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error(
+      'API key required. Pass apiKey option or set MY_API_KEY env var.'
+    );
+  }
+  
+  // Use apiKey in requests
+}
+```
+
+### 3. Provide Model References
+
+```typescript
+// Export helper for type-safe model references
+export const myProvider = myProviderPlugin as typeof myProviderPlugin & {
+  model: (name: string) => ModelReference;
+};
+
+myProvider.model = (name: string) => {
+  return modelRef({
+    name: `my-provider/${name}`,
+    configSchema: MyConfigSchema,
+  });
+};
+```
+
+### 4. Support Streaming
+
+```typescript
+async generate(
+  input: GenerateRequest,
+  streamingCallback?: (chunk: any) => void
+): Promise<GenerateResponseData> {
+  if (streamingCallback) {
+    // Handle streaming
+    const stream = await fetchStream(input);
+    for await (const chunk of stream) {
+      streamingCallback({
+        index: 0,
+        content: [{ text: chunk.text }],
+      });
+    }
+  }
+  
+  // Return final response
+}
+```
+
+### 5. Error Handling
+
+```typescript
+try {
+  const response = await fetch(url, options);
+  
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+  
+  return await response.json();
+} catch (error) {
+  throw new Error(`Failed to call API: ${error.message}`);
+}
+```
+
+### 6. Document Configuration
+
+```typescript
+/**
+ * My custom AI provider plugin.
+ * 
+ * @param options - Plugin configuration
+ * @param options.apiKey - API key (or set MY_API_KEY env var)
+ * @param options.baseUrl - Optional custom API base URL
+ * 
+ * @example
+ * ```typescript
+ * import { myProvider } from 'my-genkit-plugin';
+ * 
+ * const ai = genkit({
+ *   plugins: [
+ *     myProvider({ apiKey: 'key' }),
+ *   ],
+ * });
+ * ```
+ */
+export function myProvider(options?: MyProviderOptions): GenkitPluginV2 {
+  // ...
+}
+```
+
+## Testing Plugins
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { genkit } from 'genkit';
+import { myProvider } from './my-plugin';
+
+describe('myProvider plugin', () => {
+  it('should register models', async () => {
+    const ai = genkit({
+      plugins: [myProvider({ apiKey: 'test' })],
+    });
+
+    // Test model is available
+    const response = await ai.generate({
+      model: myProvider.model('test-model'),
+      prompt: 'Hello',
+    });
+
+    expect(response.text()).toBeTruthy();
+  });
+
+  it('should handle errors', async () => {
+    expect(() => {
+      myProvider({ apiKey: undefined });
+    }).toThrow('API key required');
+  });
+});
+```
+
+## Publishing Plugins
+
+See [Publishing Plugins](/plugins/publishing) for details on publishing your plugin to npm.
+
+## Examples
+
+Study these official plugins for reference:
+
+- **[Anthropic Plugin](https://github.com/firebase/genkit/tree/main/js/plugins/anthropic)** - Model provider with Plugin API v2
+- **[Ollama Plugin](https://github.com/firebase/genkit/tree/main/js/plugins/ollama)** - Model provider with custom config
+- **[Chroma Plugin](https://github.com/firebase/genkit/tree/main/js/plugins/chroma)** - Vector store with retriever/indexer
+- **[Pinecone Plugin](https://github.com/firebase/genkit/tree/main/js/plugins/pinecone)** - Vector store with namespaces
+
+## Links
+
+- [Plugin API Reference](/plugins/plugin-api)
+- [Publishing Plugins](/plugins/publishing)
+- [Genkit GitHub](https://github.com/firebase/genkit)
+- [Plugin Examples](https://github.com/firebase/genkit/tree/main/js/plugins)

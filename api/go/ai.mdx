@@ -1,0 +1,197 @@
+---
+title: AI Package
+description: AI package API reference (Go)
+---
+
+The `ai` package provides core AI functionality including generation, models, tools, and prompts.
+
+## Generate Options
+
+### WithModelName()
+
+Specifies the model by name.
+
+```go
+ai.WithModelName("googleai/gemini-2.0-flash")
+```
+
+### WithModel()
+
+Specifies the model instance.
+
+```go
+model := genkit.LookupModel(g, "googleai/gemini-2.0-flash")
+ai.WithModel(model)
+```
+
+### WithPrompt()
+
+Sets the user prompt.
+
+```go
+ai.WithPrompt("Tell me a joke about programming.")
+```
+
+### WithSystem()
+
+Sets system instructions.
+
+```go
+ai.WithSystem("You are a helpful coding assistant.")
+```
+
+### WithMessages()
+
+Provides conversation history.
+
+```go
+ai.WithMessages([]*ai.Message{
+    {Role: ai.RoleUser, Content: []*ai.Part{ai.NewTextPart("Hello")}},
+    {Role: ai.RoleModel, Content: []*ai.Part{ai.NewTextPart("Hi!")}},
+})
+```
+
+### WithTools()
+
+Enables tools for the model.
+
+```go
+ai.WithTools(weatherTool, calculatorTool)
+```
+
+### WithToolChoice()
+
+Controls tool usage.
+
+```go
+ai.WithToolChoice(ai.ToolChoiceRequired) // Force tool use
+ai.WithToolChoice(ai.ToolChoiceNone)     // Disable tools
+ai.WithToolChoice(ai.ToolChoiceAuto)     // Let model decide
+```
+
+### WithConfig()
+
+Sets generation parameters.
+
+```go
+ai.WithConfig(&ai.GenerationCommonConfig{
+    Temperature: 0.7,
+    MaxOutputTokens: 1000,
+    TopP: 0.9,
+})
+```
+
+### WithOutputType()
+
+Sets structured output schema from type.
+
+```go
+type Person struct {
+    Name string `json:"name"`
+    Age  int    `json:"age"`
+}
+
+ai.WithOutputType(Person{})
+```
+
+### WithOutputSchema()
+
+Sets output JSON schema.
+
+```go
+ai.WithOutputSchema(map[string]any{
+    "type": "object",
+    "properties": map[string]any{
+        "name": map[string]any{"type": "string"},
+    },
+})
+```
+
+### WithDocs()
+
+Provides context documents.
+
+```go
+ai.WithDocs([]*ai.Document{
+    ai.Document.FromText("Context document 1"),
+    ai.Document.FromText("Context document 2"),
+})
+```
+
+### WithStreaming()
+
+Enables streaming with callback.
+
+```go
+ai.WithStreaming(func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
+    fmt.Print(chunk.Text())
+    return nil
+})
+```
+
+## Types
+
+### Message
+
+```go
+type Message struct {
+    Role     Role
+    Content  []*Part
+    Metadata map[string]any
+}
+```
+
+**Roles:**
+- `ai.RoleUser`
+- `ai.RoleModel`
+- `ai.RoleSystem`
+- `ai.RoleTool`
+
+### Part
+
+```go
+// Create parts
+ai.NewTextPart("Hello")
+ai.NewMediaPart("image/png", imageData)
+ai.NewToolRequestPart(name, input)
+ai.NewToolResponsePart(name, output)
+```
+
+### ModelResponse
+
+```go
+type ModelResponse struct {
+    Message      *Message
+    FinishReason FinishReason
+    Usage        *GenerationUsage
+    Request      *ModelRequest
+    Custom       map[string]any
+}
+
+// Methods
+resp.Text() string
+resp.Output(v any) error
+```
+
+### ModelRequest
+
+```go
+type ModelRequest struct {
+    Messages []*Message
+    Tools    []*ToolDefinition
+    Config   any
+    Output   *OutputConfig
+}
+```
+
+### GenerationCommonConfig
+
+```go
+type GenerationCommonConfig struct {
+    Temperature     float64
+    MaxOutputTokens int
+    TopK            int
+    TopP            float64
+    StopSequences   []string
+}
+```

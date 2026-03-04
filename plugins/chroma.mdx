@@ -1,0 +1,484 @@
+---
+title: 'Chroma Plugin'
+description: 'Use ChromaDB vector store for RAG with Genkit'
+---
+
+# Chroma Plugin
+
+The `genkitx-chroma` plugin provides integration with [ChromaDB](https://www.trychroma.com/), an open-source vector database for building AI applications with embeddings. Use it for retrieval-augmented generation (RAG) and semantic search.
+
+## Installation
+
+```bash
+npm install genkitx-chroma chromadb
+```
+
+## Prerequisites
+
+**Install and run ChromaDB:**
+
+```bash
+# Using Docker (recommended)
+docker pull chromadb/chroma
+docker run -p 8000:8000 chromadb/chroma
+
+# Or install with pip
+pip install chromadb
+chroma run --path /chroma-data
+```
+
+Default server: `http://localhost:8000`
+
+## Basic Setup
+
+```typescript
+import { genkit } from 'genkit';
+import { chroma } from 'genkitx-chroma';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    chroma([
+      {
+        collectionName: 'my-collection',
+        embedder: googleAI.embedder('gemini-embedding-001'),
+        createCollectionIfMissing: true,
+      },
+    ]),
+  ],
+});
+```
+
+## Configuration
+
+### Plugin Configuration
+
+```typescript
+import { chroma } from 'genkitx-chroma';
+import { googleAI } from '@genkit-ai/google-genai';
+
+chroma([
+  {
+    collectionName: 'documents',
+    embedder: googleAI.embedder('gemini-embedding-001'),
+    embedderOptions: {                           // Optional embedder config
+      taskType: 'RETRIEVAL_DOCUMENT',
+    },
+    createCollectionIfMissing: true,             // Auto-create collection
+    clientParams: {                              // Optional Chroma client config
+      path: 'http://localhost:8000',
+    },
+  },
+  {
+    collectionName: 'code',                      // Multiple collections
+    embedder: googleAI.embedder('text-embedding-005'),
+    createCollectionIfMissing: true,
+  },
+])
+```
+
+### Custom Client Configuration
+
+```typescript
+import type { ChromaClientParams } from 'chromadb';
+
+// Static configuration
+const clientParams: ChromaClientParams = {
+  path: 'http://chroma-server:8000',
+  auth: {
+    provider: 'token',
+    credentials: process.env.CHROMA_TOKEN,
+  },
+};
+
+chroma([{
+  collectionName: 'my-docs',
+  embedder: googleAI.embedder('gemini-embedding-001'),
+  clientParams: clientParams,
+}])
+
+// Dynamic configuration (async)
+chroma([{
+  collectionName: 'my-docs',
+  embedder: googleAI.embedder('gemini-embedding-001'),
+  clientParams: async () => {
+    const token = await getAuthToken();
+    return {
+      path: 'http://chroma-server:8000',
+      auth: { provider: 'token', credentials: token },
+    };
+  },
+}])
+```
+
+## Usage
+
+### Indexing Documents
+
+```typescript
+import { chromaIndexerRef } from 'genkitx-chroma';
+import { Document } from 'genkit';
+
+// Define indexer
+const myIndexer = chromaIndexerRef({
+  collectionName: 'my-collection',
+});
+
+// Create documents
+const documents = [
+  Document.fromText('Genkit is a framework for building AI apps.', {
+    source: 'docs',
+  }),
+  Document.fromText('ChromaDB is a vector database.', {
+    source: 'docs',
+  }),
+  Document.fromText('RAG combines retrieval with generation.', {
+    source: 'docs',
+  }),
+];
+
+// Index documents
+await ai.index({
+  indexer: myIndexer,
+  documents: documents,
+});
+```
+
+### Retrieving Documents
+
+```typescript
+import { chromaRetrieverRef } from 'genkitx-chroma';
+
+// Define retriever
+const myRetriever = chromaRetrieverRef({
+  collectionName: 'my-collection',
+});
+
+// Retrieve relevant documents
+const results = await ai.retrieve({
+  retriever: myRetriever,
+  query: 'What is Genkit?',
+  options: {
+    k: 5,  // Return top 5 results
+  },
+});
+
+console.log(results.documents);
+```
+
+### RAG with Retrieved Context
+
+```typescript
+import { chromaRetrieverRef } from 'genkitx-chroma';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const retriever = chromaRetrieverRef({
+  collectionName: 'knowledge-base',
+});
+
+// Retrieve relevant documents
+const docs = await ai.retrieve({
+  retriever: retriever,
+  query: 'How does RAG work?',
+  options: { k: 3 },
+});
+
+// Use context in generation
+const context = docs.documents
+  .map(d => d.text)
+  .join('\n\n');
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: `Answer based on this context:\n\n${context}\n\nQuestion: How does RAG work?`,
+});
+
+console.log(response.text());
+```
+
+## Advanced Usage
+
+### Filtering with Metadata
+
+```typescript
+import { chromaRetrieverRef, IncludeEnum } from 'genkitx-chroma';
+
+// Index with metadata
+const docs = [
+  Document.fromText('Python tutorial', { 
+    language: 'python',
+    level: 'beginner',
+  }),
+  Document.fromText('Advanced TypeScript', { 
+    language: 'typescript',
+    level: 'advanced',
+  }),
+];
+
+await ai.index({ indexer: myIndexer, documents: docs });
+
+// Retrieve with filters
+const results = await ai.retrieve({
+  retriever: myRetriever,
+  query: 'programming tutorial',
+  options: {
+    k: 10,
+    where: { language: 'python' },              // Metadata filter
+    whereDocument: { $contains: 'tutorial' },   // Content filter
+    include: [                                  // What to include in results
+      'documents',
+      'metadatas',
+      'distances',
+      'embeddings',
+    ] as IncludeEnum[],
+  },
+});
+```
+
+### Creating Collections Manually
+
+```typescript
+import { createChromaCollection } from 'genkitx-chroma';
+
+// Create collection with custom settings
+await createChromaCollection(ai, {
+  name: 'my-collection',
+  embedder: googleAI.embedder('gemini-embedding-001'),
+  metadata: {
+    description: 'My document collection',
+    'hnsw:space': 'cosine',  // Similarity metric: cosine, l2, ip
+  },
+  clientParams: {
+    path: 'http://localhost:8000',
+  },
+});
+```
+
+### Deleting Collections
+
+```typescript
+import { deleteChromaCollection } from 'genkitx-chroma';
+
+await deleteChromaCollection({
+  name: 'old-collection',
+  clientParams: {
+    path: 'http://localhost:8000',
+  },
+});
+```
+
+## Complete RAG Example
+
+```typescript
+import { genkit, z } from 'genkit';
+import { chroma, chromaRetrieverRef, chromaIndexerRef } from 'genkitx-chroma';
+import { googleAI } from '@genkit-ai/google-genai';
+import { Document } from 'genkit';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    chroma([{
+      collectionName: 'knowledge-base',
+      embedder: googleAI.embedder('gemini-embedding-001'),
+      createCollectionIfMissing: true,
+    }]),
+  ],
+});
+
+const indexer = chromaIndexerRef({ collectionName: 'knowledge-base' });
+const retriever = chromaRetrieverRef({ collectionName: 'knowledge-base' });
+
+// Index documents
+const knowledgeDocs = [
+  Document.fromText('Genkit is a framework for building AI applications.'),
+  Document.fromText('ChromaDB is an open-source vector database.'),
+  Document.fromText('RAG improves LLM responses with relevant context.'),
+];
+
+await ai.index({ indexer, documents: knowledgeDocs });
+
+// RAG flow
+const ragFlow = ai.defineFlow(
+  {
+    name: 'ragFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (query) => {
+    // Retrieve relevant documents
+    const docs = await ai.retrieve({
+      retriever: retriever,
+      query: query,
+      options: { k: 3 },
+    });
+
+    // Build context from retrieved documents
+    const context = docs.documents
+      .map(d => d.text)
+      .join('\n');
+
+    // Generate with context
+    const response = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Context:\n${context}\n\nQuestion: ${query}\n\nAnswer:`,
+    });
+
+    return response.text();
+  }
+);
+
+// Use the flow
+const answer = await ragFlow('What is Genkit?');
+console.log(answer);
+```
+
+## Best Practices
+
+### Choose the Right Embedder
+
+```typescript
+// For general text (Google AI)
+embedder: googleAI.embedder('gemini-embedding-001')
+
+// For high-quality embeddings (Vertex AI)
+embedder: vertexAI.embedder('text-embedding-005')
+
+// For local embeddings (Ollama)
+embedder: ollama.embedder('nomic-embed-text')
+```
+
+### Chunk Large Documents
+
+```typescript
+import { Document } from 'genkit';
+
+function chunkDocument(text: string, chunkSize: number = 500): Document[] {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(
+      Document.fromText(text.slice(i, i + chunkSize), {
+        chunkIndex: i / chunkSize,
+        originalLength: text.length,
+      })
+    );
+  }
+  return chunks;
+}
+
+const longText = /* ... */;
+const chunks = chunkDocument(longText);
+await ai.index({ indexer: myIndexer, documents: chunks });
+```
+
+### Error Handling
+
+```typescript
+try {
+  const results = await ai.retrieve({
+    retriever: myRetriever,
+    query: 'test query',
+  });
+} catch (error) {
+  if (error.message.includes('Collection not found')) {
+    console.error('Collection does not exist. Create it first.');
+  } else if (error.message.includes('ECONNREFUSED')) {
+    console.error('ChromaDB server is not running.');
+  } else {
+    console.error('Retrieval error:', error);
+  }
+}
+```
+
+### Collection Naming
+
+```typescript
+// Use descriptive names
+chroma([{
+  collectionName: 'product-documentation',  // Good
+  // collectionName: 'docs',                 // Too generic
+}])
+
+// Organize by domain
+chroma([
+  { collectionName: 'legal-documents', embedder },
+  { collectionName: 'technical-docs', embedder },
+  { collectionName: 'customer-support', embedder },
+])
+```
+
+## Configuration Options
+
+### Retriever Options
+
+```typescript
+await ai.retrieve({
+  retriever: myRetriever,
+  query: 'search query',
+  options: {
+    k: 5,                                    // Number of results (default: 10)
+    where: { language: 'en' },               // Metadata filter
+    whereDocument: { $contains: 'keyword' }, // Content filter
+    include: ['documents', 'distances'],     // What to include
+  },
+});
+```
+
+### Where Filters
+
+```typescript
+// Exact match
+where: { language: 'python' }
+
+// Multiple conditions
+where: { 
+  $and: [
+    { language: 'python' },
+    { level: 'beginner' },
+  ]
+}
+
+// Or conditions
+where: {
+  $or: [
+    { language: 'python' },
+    { language: 'javascript' },
+  ]
+}
+
+// Not equal
+where: { language: { $ne: 'java' } }
+```
+
+## Troubleshooting
+
+### ChromaDB Not Running
+
+**Error:** `ECONNREFUSED`
+
+**Solution:** Start ChromaDB server:
+```bash
+docker run -p 8000:8000 chromadb/chroma
+```
+
+### Collection Not Found
+
+**Error:** `Collection 'name' not found`
+
+**Solution:** Set `createCollectionIfMissing: true` or create manually.
+
+### Slow Retrieval
+
+**Solutions:**
+- Reduce `k` value (return fewer results)
+- Use more specific metadata filters
+- Optimize collection size
+- Use smaller embeddings
+
+## Links
+
+- [ChromaDB Documentation](https://docs.trychroma.com/)
+- [ChromaDB GitHub](https://github.com/chroma-core/chroma)
+- [Embeddings Guide](https://docs.trychroma.com/guides/embeddings)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/chroma)

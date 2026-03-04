@@ -1,0 +1,281 @@
+---
+title: Tools API
+description: Tools API reference (Go)
+---
+
+Tools allow models to call functions during generation.
+
+## DefineTool()
+
+Defines and registers a tool.
+
+```go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+)
+
+type WeatherInput struct {
+    City string `json:"city"`
+}
+
+type WeatherOutput struct {
+    Temperature int    `json:"temperature"`
+    Conditions  string `json:"conditions"`
+}
+
+weatherTool := genkit.DefineTool(g, "getWeather",
+    "Gets current weather for a city",
+    func(ctx *ai.ToolContext, input WeatherInput) (WeatherOutput, error) {
+        // Tool implementation
+        return WeatherOutput{
+            Temperature: 72,
+            Conditions:  "sunny",
+        }, nil
+    },
+)
+```
+
+### Type Parameters
+
+<ParamField path="In" type="any" required>
+  Input type (must have JSON tags for schema generation)
+</ParamField>
+
+<ParamField path="Out" type="any" required>
+  Output type (must have JSON tags for schema generation)
+</ParamField>
+
+### Parameters
+
+<ParamField path="g" type="*Genkit" required>
+  Genkit instance
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Unique tool name
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Description of what the tool does (helps model understand when to use it)
+</ParamField>
+
+<ParamField path="fn" type="ToolFunc[In, Out]" required>
+  Tool implementation function
+  
+  **Signature:**
+  ```go
+  func(ctx *ToolContext, input In) (Out, error)
+  ```
+</ParamField>
+
+<ParamField path="opts" type="...ToolOption">
+  Optional tool configuration
+  
+  Available options:
+  - `ai.WithInputSchema(map[string]any)` - Custom input JSON schema
+  - `ai.WithInputSchemaName(string)` - Reference registered schema
+</ParamField>
+
+### Returns
+
+<ResponseField name="tool" type="*ToolDef[In, Out]">
+  Tool definition that can be passed to `WithTools()`
+</ResponseField>
+
+## DefineMultipartTool()
+
+Defines a tool that returns content parts (text + media).
+
+```go
+type ImageGenInput struct {
+    Prompt string `json:"prompt"`
+}
+
+imageGenTool := genkit.DefineMultipartTool(g, "generateImage",
+    "Generates an image from a prompt",
+    func(ctx *ai.ToolContext, input ImageGenInput) (*ai.MultipartToolResponse, error) {
+        imageBytes := generateImage(input.Prompt)
+        
+        return &ai.MultipartToolResponse{
+            Output: map[string]any{
+                "status": "success",
+                "prompt": input.Prompt,
+            },
+            Content: []*ai.Part{
+                ai.NewMediaPart("image/png", string(imageBytes)),
+            },
+        }, nil
+    },
+)
+```
+
+### Type Parameters
+
+<ParamField path="In" type="any" required>
+  Input type
+</ParamField>
+
+### Parameters
+
+Same as `DefineTool()` except function returns `*MultipartToolResponse`.
+
+### Returns
+
+<ResponseField name="tool" type="*ToolDef[In, *MultipartToolResponse]">
+  Multipart tool definition
+</ResponseField>
+
+## DefineToolWithInputSchema()
+
+<Warning>Deprecated: Use `DefineTool()` with `ai.WithInputSchema()` instead.</Warning>
+
+Defines a tool with custom input schema.
+
+```go
+inputSchema := map[string]any{
+    "type": "object",
+    "properties": map[string]any{
+        "city": map[string]any{"type": "string"},
+    },
+}
+
+weatherTool := genkit.DefineToolWithInputSchema[WeatherOutput](
+    g, "getWeather",
+    "Gets weather",
+    inputSchema,
+    func(ctx *ai.ToolContext, input any) (WeatherOutput, error) {
+        city := input.(map[string]any)["city"].(string)
+        return WeatherOutput{Temperature: 72}, nil
+    },
+)
+```
+
+## Tool Context
+
+### ToolContext
+
+```go
+type ToolContext struct {
+    // Context fields available to tools
+}
+```
+
+The `ToolContext` provides access to runtime information during tool execution.
+
+## Types
+
+### Tool
+
+```go
+type Tool interface {
+    Name() string
+    Definition() *ToolDefinition
+    // ...
+}
+```
+
+### ToolDefinition
+
+```go
+type ToolDefinition struct {
+    Name         string
+    Description  string
+    InputSchema  map[string]any
+    OutputSchema map[string]any
+}
+```
+
+### MultipartToolResponse
+
+```go
+type MultipartToolResponse struct {
+    Output   any
+    Content  []*Part
+    Metadata map[string]any
+}
+```
+
+### ToolDef
+
+```go
+type ToolDef[In, Out any] struct {
+    // Tool definition with type parameters
+}
+
+// Methods
+func (t *ToolDef[In, Out]) Name() string
+func (t *ToolDef[In, Out]) Definition() *ToolDefinition
+```
+
+## Example: Complete Tool Usage
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+type CalculatorInput struct {
+    Operation string  `json:"operation"`
+    A         float64 `json:"a"`
+    B         float64 `json:"b"`
+}
+
+type CalculatorOutput struct {
+    Result float64 `json:"result"`
+}
+
+func main() {
+    ctx := context.Background()
+    
+    g := genkit.Init(ctx,
+        genkit.WithPlugins(&googlegenai.GoogleAI{}),
+    )
+    
+    // Define calculator tool
+    calcTool := genkit.DefineTool(g, "calculator",
+        "Performs basic arithmetic operations (add, subtract, multiply, divide)",
+        func(ctx *ai.ToolContext, input CalculatorInput) (CalculatorOutput, error) {
+            var result float64
+            
+            switch input.Operation {
+            case "add":
+                result = input.A + input.B
+            case "subtract":
+                result = input.A - input.B
+            case "multiply":
+                result = input.A * input.B
+            case "divide":
+                if input.B == 0 {
+                    return CalculatorOutput{}, fmt.Errorf("division by zero")
+                }
+                result = input.A / input.B
+            default:
+                return CalculatorOutput{}, fmt.Errorf("unknown operation: %s", input.Operation)
+            }
+            
+            return CalculatorOutput{Result: result}, nil
+        },
+    )
+    
+    // Use the tool
+    resp, err := genkit.Generate(ctx, g,
+        ai.WithModelName("googleai/gemini-2.0-flash"),
+        ai.WithPrompt("What is 15 multiplied by 7?"),
+        ai.WithTools(calcTool),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Println(resp.Text())
+}
+```

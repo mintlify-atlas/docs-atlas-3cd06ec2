@@ -1,0 +1,528 @@
+---
+title: Retrieval-Augmented Generation (RAG)
+description: Build AI systems that retrieve and use relevant information from your data
+---
+
+# Retrieval-Augmented Generation (RAG)
+
+Retrieval-Augmented Generation (RAG) enhances AI responses by retrieving relevant information from your documents before generating answers. This reduces hallucinations and grounds responses in your actual data.
+
+## How RAG Works
+
+RAG follows a two-step process:
+
+1. **Index**: Convert documents to embeddings and store them in a vector database
+2. **Retrieve**: Find relevant documents and use them as context for generation
+
+```
+User Query → Embed Query → Find Similar Documents → Generate Answer with Context
+```
+
+## Basic RAG Flow
+
+Here's a complete RAG implementation:
+
+<CodeGroup>
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+    "github.com/firebase/genkit/go/plugins/localvec"
+)
+
+func main() {
+    ctx := context.Background()
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    // Initialize embedder
+    embedder := googlegenai.GoogleAIEmbedder(g, "embedding-001")
+    
+    // Initialize local vector store
+    localvec.Init()
+    docStore, retriever, _ := localvec.DefineRetriever(g, "simpleQa", 
+        localvec.Config{Embedder: embedder}, 
+        &ai.RetrieverOptions{Label: "simpleQa"})
+
+    // Define RAG flow
+    genkit.DefineFlow(g, "simpleQaFlow", 
+        func(ctx context.Context, input *simpleQaInput) (string, error) {
+            // 1. Index documents
+            docs := []*ai.Document{
+                ai.DocumentFromText("Paris is the capital of France", nil),
+                ai.DocumentFromText("USA is the largest importer of coffee", nil),
+                ai.DocumentFromText("Water exists in 3 states - solid, liquid and gas", nil),
+            }
+            localvec.Index(ctx, docs, docStore)
+
+            // 2. Retrieve relevant documents
+            dRequest := ai.DocumentFromText(input.Question, nil)
+            response, _ := genkit.Retrieve(ctx, g,
+                ai.WithRetriever(retriever),
+                ai.WithDocs(dRequest),
+                ai.WithConfig(&localvec.RetrieverOptions{K: 2}),
+            )
+
+            // 3. Build context from retrieved documents
+            var context strings.Builder
+            for _, d := range response.Documents {
+                context.WriteString(d.Content[0].Text)
+                context.WriteByte('\n')
+            }
+
+            // 4. Generate answer with context
+            return genkit.GenerateText(ctx, g,
+                ai.WithModelName("googleai/gemini-2.5-flash"),
+                ai.WithPrompt("Answer the question based on this context:\n\nContext: %s\n\nQuestion: %s", 
+                    context.String(), input.Question),
+            )
+        })
+}
+```
+
+```python Python
+from genkit.ai import Genkit
+from genkit.plugins.dev_local_vectorstore import define_dev_local_vector_store
+from genkit.plugins.google_genai import VertexAI
+from genkit.types import Document
+
+ai = Genkit(
+    plugins=[VertexAI()],
+    model='vertexai/gemini-3-flash-preview',
+)
+
+# Define local vector store
+define_dev_local_vector_store(
+    ai,
+    name='films',
+    embedder='vertexai/gemini-embedding-001',
+)
+
+films = [
+    'The Matrix is a 1999 sci-fi film directed by the Wachowskis.',
+    'Inception is a 2010 sci-fi film directed by Christopher Nolan.',
+    'The Godfather is a 1972 crime film directed by Francis Ford Coppola.',
+]
+
+@ai.flow()
+async def index_documents() -> None:
+    """Index the film documents."""
+    genkit_documents = [Document.from_text(text=film) for film in films]
+    await ai.index(
+        indexer='films',
+        documents=genkit_documents,
+    )
+
+@ai.flow()
+async def retrieve_documents(query: str) -> str:
+    """Retrieve documents and generate an answer."""
+    # Retrieve relevant documents
+    retrieval_response = await ai.retrieve(
+        query=Document.from_text(query),
+        retriever='films',
+        options={'limit': 3},
+    )
+    
+    # Build context
+    context = '\n'.join([doc.content[0].text for doc in retrieval_response.documents])
+    
+    # Generate answer
+    response = await ai.generate(
+        f"Answer based on context:\n\nContext: {context}\n\nQuestion: {query}"
+    )
+    return response.text
+```
+
+```typescript TypeScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { devLocalRetrieverRef, devLocalIndexerRef } from '@genkit-ai/dev-local-vectorstore';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const retriever = devLocalRetrieverRef('films');
+const indexer = devLocalIndexerRef('films');
+
+const ragFlow = ai.defineFlow(
+  {
+    name: 'simpleQA',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (question) => {
+    // 1. Index documents
+    await ai.index({
+      indexer,
+      documents: [
+        { text: 'The Matrix is a 1999 sci-fi film.' },
+        { text: 'Inception is a 2010 sci-fi film.' },
+      ],
+    });
+
+    // 2. Retrieve relevant documents
+    const docs = await ai.retrieve({
+      retriever,
+      query: question,
+      options: { k: 2 },
+    });
+
+    // 3. Build context
+    const context = docs.map(d => d.text).join('\n');
+
+    // 4. Generate answer
+    const { text } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Context: ${context}\n\nQuestion: ${question}`,
+    });
+    
+    return text;
+  }
+);
+```
+
+</CodeGroup>
+
+## Embedders
+
+Embedders convert text into vector representations. Genkit supports multiple embedder providers:
+
+<CodeGroup>
+
+```go Go
+// Google AI embedder
+embed := googlegenai.GoogleAIEmbedder(g, "embedding-001")
+
+// Vertex AI embedder
+embed := googlegenai.VertexAIEmbedder(g, "textembedding-gecko")
+```
+
+```typescript TypeScript
+import { textEmbedding004 } from '@genkit-ai/googleai';
+
+const embedder = textEmbedding004;
+```
+
+</CodeGroup>
+
+## Vector Stores
+
+Genkit provides plugins for various vector databases:
+
+### Local Vector Store (Development)
+
+Perfect for development and testing:
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/localvec"
+
+localvec.Init()
+docStore, retriever, _ := localvec.DefineRetriever(g, "myIndex", 
+    localvec.Config{Embedder: embedder},
+    &ai.RetrieverOptions{Label: "myIndex"})
+```
+
+```python Python
+from genkit.plugins.dev_local_vectorstore import define_dev_local_vector_store
+
+define_dev_local_vector_store(
+    ai,
+    name='myIndex',
+    embedder='vertexai/gemini-embedding-001',
+)
+```
+
+</CodeGroup>
+
+### Pinecone
+
+<CodeGroup>
+
+```typescript TypeScript
+import { pineconeRetrieverRef, pineconeIndexerRef } from 'genkitx-pinecone';
+
+const retriever = pineconeRetrieverRef({
+  indexId: 'my-index',
+  displayName: 'Pinecone retriever',
+});
+
+const indexer = pineconeIndexerRef({
+  indexId: 'my-index',
+  displayName: 'Pinecone indexer',
+});
+```
+
+</CodeGroup>
+
+### PostgreSQL (pgvector)
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/postgresql"
+
+pg, _ := postgresql.New(ctx, cfg, embedder)
+retriever := pg.Retriever("myRetriever")
+indexer := pg.Indexer("myIndexer")
+```
+
+</CodeGroup>
+
+### Weaviate
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/weaviate"
+
+retriever, indexer := weaviate.DefineWeaviateRetriever(
+    ctx, g, "myClass", weaviateConfig)
+```
+
+</CodeGroup>
+
+## Indexing Documents
+
+Add documents to your vector store:
+
+<CodeGroup>
+
+```go Go
+docs := []*ai.Document{
+    ai.DocumentFromText("The Godfather is a 1972 crime film.", nil),
+    ai.DocumentFromText("The Matrix is a 1999 sci-fi film.", nil),
+}
+
+err := localvec.Index(ctx, docs, docStore)
+```
+
+```typescript TypeScript
+await ai.index({
+  indexer,
+  documents: [
+    { text: 'The Godfather is a 1972 crime film.' },
+    { text: 'The Matrix is a 1999 sci-fi film.' },
+  ],
+});
+```
+
+</CodeGroup>
+
+## Retrieving Documents
+
+Find relevant documents based on a query:
+
+<CodeGroup>
+
+```go Go
+dRequest := ai.DocumentFromText("What's a good sci-fi movie?", nil)
+response, _ := genkit.Retrieve(ctx, g,
+    ai.WithRetriever(retriever),
+    ai.WithDocs(dRequest),
+    ai.WithConfig(&localvec.RetrieverOptions{K: 3}),
+)
+
+for _, doc := range response.Documents {
+    fmt.Println(doc.Content[0].Text)
+}
+```
+
+```typescript TypeScript
+const docs = await ai.retrieve({
+  retriever,
+  query: "What's a good sci-fi movie?",
+  options: { k: 3 },
+});
+
+docs.forEach(doc => console.log(doc.text));
+```
+
+</CodeGroup>
+
+## Multimodal RAG
+
+RAG also works with images and videos:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { Document } from 'genkit';
+
+// Index video with metadata
+const videoDocs = [
+  Document.fromMedia(
+    'gs://cloud-samples-data/video/pixel8.mp4',
+    'video/mp4',
+    {
+      videoSegmentConfig: {
+        startOffsetSec: 0,
+        endOffsetSec: 120,
+        intervalSec: 15,
+      },
+    }
+  ),
+];
+
+await ai.index({
+  indexer: videoIndexer,
+  documents: videoDocs,
+});
+
+// Retrieve and query video segments
+const videoQA = ai.defineFlow(
+  { name: 'videoQuestions', inputSchema: z.string() },
+  async (query) => {
+    const docs = await ai.retrieve({
+      retriever: videoRetriever,
+      query,
+      options: { k: 1 },
+    });
+
+    // Use the video segment in the prompt
+    const { text } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Answer based on this video segment: ${query}`,
+      media: docs[0].media,
+    });
+    
+    return text;
+  }
+);
+```
+
+</CodeGroup>
+
+## Document Metadata
+
+Add metadata to documents for filtering and context:
+
+<CodeGroup>
+
+```go Go
+doc := ai.DocumentFromText("Paris is the capital of France", map[string]any{
+    "source": "geography_facts.txt",
+    "category": "geography",
+    "date": "2024-01-15",
+})
+```
+
+```typescript TypeScript
+const doc = {
+  text: 'Paris is the capital of France',
+  metadata: {
+    source: 'geography_facts.txt',
+    category: 'geography',
+    date: '2024-01-15',
+  },
+};
+```
+
+</CodeGroup>
+
+## Best Practices
+
+### Chunk Documents Appropriately
+
+Break large documents into smaller, focused chunks:
+
+- **Too small**: Lacks context
+- **Too large**: Contains irrelevant information
+- **Recommended**: 200-500 words per chunk
+
+### Use Meaningful Metadata
+
+Add metadata to help with filtering and ranking:
+
+```go Go
+metadata := map[string]any{
+    "title": "Product Guide",
+    "category": "electronics",
+    "date": "2024-01-15",
+    "version": "2.0",
+}
+```
+
+### Optimize Retrieval Parameters
+
+Adjust `k` based on your use case:
+
+- **Simple Q&A**: k=1-3
+- **Comprehensive answers**: k=5-10
+- **Research/summarization**: k=10-20
+
+### Use System Prompts
+
+Guide how the model uses retrieved context:
+
+```go Go
+ai.WithSystem("You are a helpful assistant. Answer questions based only on the provided context. If the context doesn't contain the answer, say 'I don't know'.")
+```
+
+## Complete RAG Example
+
+Here's a production-ready RAG flow:
+
+<CodeGroup>
+
+```go Go
+const qaPromptTemplate = `
+You're a helpful agent that answers questions based on the context provided.
+
+Here is the user's query: {{query}}
+
+Here is the context you should use: {{context}}
+
+Please provide the best answer you can.
+`
+
+type simpleQaInput struct {
+    Question string `json:"question"`
+}
+
+type simpleQaPromptInput struct {
+    Query   string `json:"query"`
+    Context string `json:"context"`
+}
+
+qaPrompt := genkit.DefinePrompt(g, "simpleQaPrompt",
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt(qaPromptTemplate),
+    ai.WithInputType(simpleQaPromptInput{}),
+)
+
+genkit.DefineFlow(g, "simpleQaFlow", 
+    func(ctx context.Context, input *simpleQaInput) (string, error) {
+        // Retrieve documents
+        dRequest := ai.DocumentFromText(input.Question, nil)
+        response, _ := genkit.Retrieve(ctx, g,
+            ai.WithRetriever(retriever),
+            ai.WithDocs(dRequest),
+            ai.WithConfig(&localvec.RetrieverOptions{K: 2}),
+        )
+
+        // Build context
+        var context strings.Builder
+        for _, d := range response.Documents {
+            context.WriteString(d.Content[0].Text)
+            context.WriteByte('\n')
+        }
+
+        // Generate answer
+        resp, _ := qaPrompt.Execute(ctx, ai.WithInput(&simpleQaPromptInput{
+            Query:   input.Question,
+            Context: context.String(),
+        }))
+        
+        return resp.Text(), nil
+    })
+```
+
+</CodeGroup>
+
+## Next Steps
+
+- Explore [Multimodal](/guides/multimodal) for image and video RAG
+- Learn about [Evaluation](/guides/evaluation) to test RAG quality
+- Check out [Flows](/concepts/flows) for production deployment

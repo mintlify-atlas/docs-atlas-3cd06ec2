@@ -1,0 +1,406 @@
+---
+title: Google AI Provider (Gemini Developer API)
+description: Access Gemini models with the Google AI provider for quick prototyping
+---
+
+The Google AI provider gives you quick access to Google's generative AI models through the **Gemini Developer API**. This provider is ideal for prototyping and smaller projects that don't require the full infrastructure of Google Cloud.
+
+<Note>
+This provider is part of the unified `@genkit-ai/google-genai` package, which also includes Vertex AI. For enterprise features, see [Vertex AI](/providers/vertex-ai).
+</Note>
+
+## Installation
+
+```bash
+npm install @genkit-ai/google-genai
+```
+
+## Setup
+
+### Get an API Key
+
+1. Visit [Google AI Studio](https://aistudio.google.com/apikey)
+2. Create or select a project
+3. Generate an API key
+4. Set it as an environment variable:
+
+```bash
+export GEMINI_API_KEY=your-api-key
+# or
+export GOOGLE_API_KEY=your-api-key
+```
+
+### Configure the Plugin
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    // Or with explicit API key:
+    // googleAI({ apiKey: 'your-api-key' }),
+  ],
+});
+```
+
+## Available Models
+
+### Text Generation (Gemini)
+
+The Gemini 2.5 series offers the latest and most powerful models:
+
+- **gemini-2.5-flash** - Balanced speed and performance, best default choice
+- **gemini-2.5-pro** - Most powerful, for complex reasoning tasks
+- **gemini-2.5-flash-lite** - Fastest, for simple prompts
+
+All Gemini models support:
+- Multi-turn conversations
+- Multimodal input (text, images, audio, video)
+- Function calling (tools)
+- System instructions
+- JSON output mode
+
+### Image Generation (Imagen)
+
+- **imagen-3.0-generate-002** - High-quality image generation
+- **imagen-3.0-fast-generate-001** - Faster image generation
+
+### Video Generation (Veo)
+
+- **veo-002** - Generate videos from text prompts
+
+### Embeddings
+
+- **gemini-embedding-001** - 768-dimensional text embeddings
+- **text-embedding-004** - Latest embedding model
+
+## Usage Examples
+
+### Basic Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Explain how photosynthesis works in simple terms.',
+});
+
+console.log(response.text());
+```
+
+### Multimodal Input
+
+Gemini models can process images, audio, and video:
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: [
+    { text: 'What is in this image? Describe it in detail.' },
+    { media: { url: 'https://example.com/image.jpg' } },
+  ],
+});
+
+console.log(response.text());
+```
+
+### Streaming Responses
+
+```typescript
+const { response, stream } = await ai.generateStream({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Write a short story about a robot.',
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text());
+}
+```
+
+### Function Calling
+
+```typescript
+import { z } from 'genkit';
+
+const getWeather = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Get the current weather for a location',
+    inputSchema: z.object({
+      location: z.string().describe('City name'),
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ location }) => {
+    // Fetch weather data
+    return `It's sunny and 72°F in ${location}`;
+  }
+);
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'What\'s the weather like in San Francisco?',
+  tools: [getWeather],
+});
+
+console.log(response.text());
+```
+
+### JSON Output Mode
+
+```typescript
+import { z } from 'genkit';
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'List three colors',
+  output: {
+    schema: z.object({
+      colors: z.array(z.string()),
+    }),
+  },
+});
+
+console.log(response.output());
+// { colors: ['red', 'blue', 'green'] }
+```
+
+### Image Generation with Imagen
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('imagen-3.0-generate-002'),
+  prompt: 'A serene mountain landscape at sunset with a lake reflection',
+});
+
+const image = response.media();
+if (image) {
+  console.log('Generated image:', image.url);
+}
+```
+
+### Text Embeddings
+
+```typescript
+const embeddings = await ai.embed({
+  embedder: googleAI.embedder('gemini-embedding-001'),
+  content: 'Genkit is a framework for building AI applications',
+});
+
+console.log(embeddings); // 768-dimensional vector
+```
+
+### Using in a Flow
+
+```typescript
+import { z } from 'genkit';
+
+export const summarizeFlow = ai.defineFlow(
+  {
+    name: 'summarize',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (text) => {
+    const response = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Summarize this text in 2-3 sentences:\n\n${text}`,
+    });
+    return response.text();
+  }
+);
+```
+
+## Configuration Options
+
+### Model Configuration
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Tell me a joke',
+  config: {
+    temperature: 1.0,        // Creativity (0.0 - 2.0)
+    topK: 40,                 // Token sampling
+    topP: 0.95,               // Nucleus sampling
+    maxOutputTokens: 1024,    // Max response length
+    stopSequences: ['END'],   // Stop generation triggers
+  },
+});
+```
+
+### Safety Settings
+
+Control content filtering:
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Write a story',
+  config: {
+    safetySettings: [
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: 'BLOCK_ONLY_HIGH',
+      },
+    ],
+  },
+});
+```
+
+### System Instructions
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  system: 'You are a helpful math tutor. Explain concepts clearly and provide examples.',
+  prompt: 'How do I solve quadratic equations?',
+});
+```
+
+## Model Selection Guide
+
+### When to Use Each Model
+
+**gemini-2.5-flash** (recommended default):
+- General-purpose tasks
+- Chat applications
+- Content generation
+- Code assistance
+- Balanced cost and performance
+
+**gemini-2.5-pro**:
+- Complex reasoning tasks
+- Research and analysis
+- Technical explanations
+- When accuracy is critical
+
+**gemini-2.5-flash-lite**:
+- Simple queries
+- High-volume applications
+- When speed is critical
+- Cost-sensitive use cases
+
+## Google AI vs Vertex AI
+
+| Feature | Google AI | Vertex AI |
+|---------|-----------|------------|
+| Setup | Simple API key | GCP project + IAM |
+| Best for | Prototyping, small apps | Production, enterprise |
+| Authentication | API key | ADC or API key |
+| Pricing | Pay-per-use | Committed use discounts |
+| Model access | Gemini, Imagen | Gemini, Imagen, Lyria, Model Garden |
+| Features | Basic | Advanced (fine-tuning, governance, Vector Search) |
+
+**Choose Google AI when:**
+- Building prototypes or small projects
+- Want quick setup with minimal configuration
+- Don't need advanced GCP integrations
+
+**Choose Vertex AI when:**
+- Building production applications
+- Need IAM-based access control
+- Want to use Model Garden (Anthropic, Meta, etc.)
+- Need Vector Search for RAG
+- Require enterprise features
+
+## Using Both Providers
+
+You can configure both Google AI and Vertex AI in the same application:
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI, vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),      // For development and prototyping
+    vertexAI(),      // For production features
+  ],
+});
+
+// Use Google AI for quick tasks
+const devResponse = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Quick test',
+});
+
+// Use Vertex AI for production
+const prodResponse = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Production query',
+});
+```
+
+## Troubleshooting
+
+### API Key Not Found
+
+```
+Error: Please pass in the API key or set the GEMINI_API_KEY environment variable
+```
+
+**Solution:** Set the `GEMINI_API_KEY` or `GOOGLE_API_KEY` environment variable, or pass it explicitly:
+
+```typescript
+googleAI({ apiKey: 'your-api-key' })
+```
+
+### Rate Limiting
+
+If you hit rate limits, the API will return a 429 error. Implement exponential backoff:
+
+```typescript
+import { retry } from 'genkit/retry';
+
+const response = await retry(
+  () => ai.generate({
+    model: googleAI.model('gemini-2.5-flash'),
+    prompt: 'Hello',
+  }),
+  { maxRetries: 3, backoff: 'exponential' }
+);
+```
+
+### Content Blocked by Safety Filters
+
+If your content is blocked, adjust safety settings or rephrase your prompt:
+
+```typescript
+config: {
+  safetySettings: [
+    {
+      category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+      threshold: 'BLOCK_ONLY_HIGH',
+    },
+  ],
+}
+```
+
+## Best Practices
+
+1. **Use environment variables** for API keys, never hardcode them
+2. **Set appropriate safety settings** for your use case
+3. **Use gemini-2.5-flash** as your default model
+4. **Implement error handling** for API failures
+5. **Cache embeddings** to avoid redundant API calls
+6. **Use streaming** for better user experience with long responses
+
+## Next Steps
+
+- [Vertex AI Provider](/providers/vertex-ai) - Enterprise features and Model Garden
+- [Prompt Engineering](/concepts/prompts) - Write better prompts
+- [Flows](/concepts/flows) - Build AI workflows
+- [RAG](/guides/rag) - Retrieval-augmented generation

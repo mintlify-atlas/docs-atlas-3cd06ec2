@@ -1,0 +1,570 @@
+---
+title: Tools
+description: Extend AI models with custom functions and agentic workflows
+---
+
+Tools give AI models the ability to call functions, enabling them to interact with external systems, access real-time data, and perform complex operations beyond text generation.
+
+## What are Tools?
+
+A **tool** is a function that an AI model can choose to call during generation. The model:
+1. Analyzes the user's request
+2. Decides which tool(s) to use
+3. Calls the tool(s) with appropriate arguments
+4. Incorporates the tool results into its response
+
+This enables **agentic workflows** where the model acts autonomously to solve problems.
+
+## Defining Tools
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const getWeatherTool = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Get current weather for a city. Use this when users ask about weather conditions.',
+    inputSchema: z.object({
+      city: z.string().describe('City name, e.g., "Paris" or "New York"'),
+    }),
+    outputSchema: z.object({
+      temperature: z.number(),
+      conditions: z.string(),
+      humidity: z.number(),
+    }),
+  },
+  async ({ city }) => {
+    // Call weather API...
+    return {
+      temperature: 72,
+      conditions: 'Sunny',
+      humidity: 65,
+    };
+  }
+);
+
+// Use in generation
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'What is the weather in Paris?',
+  tools: [getWeatherTool],
+});
+
+console.log(text);
+// "The weather in Paris is currently sunny with a temperature of 72°F and 65% humidity."
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+ai = Genkit(plugins=[GoogleGenAI()])
+
+@ai.tool()
+def get_weather(city: str) -> dict:
+    """Get current weather for a city.
+    
+    Args:
+        city: City name, e.g., "Paris" or "New York"
+    
+    Returns:
+        Weather information including temperature, conditions, and humidity
+    """
+    # Call weather API...
+    return {
+        'temperature': 72,
+        'conditions': 'Sunny',
+        'humidity': 65,
+    }
+
+# Use in generation
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='What is the weather in Paris?',
+    tools=['get_weather'],
+)
+
+print(response.text)
+# "The weather in Paris is currently sunny with a temperature of 72°F and 65% humidity."
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/core"
+)
+
+type WeatherInput struct {
+    City string `json:"city"`
+}
+
+type WeatherOutput struct {
+    Temperature float64 `json:"temperature"`
+    Conditions  string  `json:"conditions"`
+    Humidity    float64 `json:"humidity"`
+}
+
+getWeatherTool := core.DefineTool(
+    "getWeather",
+    "Get current weather for a city",
+    func(ctx context.Context, input WeatherInput) (WeatherOutput, error) {
+        // Call weather API...
+        return WeatherOutput{
+            Temperature: 72,
+            Conditions:  "Sunny",
+            Humidity:    65,
+        }, nil
+    },
+)
+
+// Use in generation
+resp, _ := ai.Generate(ctx, &ai.GenerateRequest{
+    Prompt: "What is the weather in Paris?",
+    Tools:  []*core.Tool{getWeatherTool},
+})
+```
+</CodeGroup>
+
+## How Tool Calling Works
+
+The tool execution flow:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Tool Execution Flow                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐    │
+│  │  Model   │ ───► │   Tool   │ ───► │ Execute  │ ───► │  Model   │    │
+│  │ Request  │      │ Request  │      │ Function │      │ Continue │    │
+│  └──────────┘      └──────────┘      └──────────┘      └──────────┘    │
+│                          │                                             │
+│                          ▼ (if interrupt=True)                         │
+│                    ┌──────────┐                                        │
+│                    │  Pause   │ ────► User confirms ────► Resume       │
+│                    └──────────┘                                        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+1. User sends prompt: "What's the weather in Paris?"
+2. Model analyzes prompt and available tools
+3. Model decides to call `getWeather` with `{city: "Paris"}`
+4. Genkit executes the tool function
+5. Tool returns `{temperature: 72, conditions: "Sunny", humidity: 65}`
+6. Model incorporates result into its response
+7. Model returns: "The weather in Paris is currently sunny..."
+
+## Multiple Tools
+
+Provide multiple tools for the model to choose from:
+
+```python
+@ai.tool()
+def get_weather(city: str) -> dict:
+    """Get current weather for a city."""
+    return {'temperature': 72, 'conditions': 'Sunny'}
+
+@ai.tool()
+def search_restaurants(city: str, cuisine: str) -> list[dict]:
+    """Search for restaurants in a city."""
+    return [
+        {'name': 'Le Bistro', 'rating': 4.5},
+        {'name': 'Chez Pierre', 'rating': 4.8},
+    ]
+
+@ai.tool()
+def book_reservation(restaurant: str, time: str, party_size: int) -> dict:
+    """Book a restaurant reservation."""
+    return {'confirmation': 'ABC123', 'restaurant': restaurant}
+
+response = await ai.generate(
+    prompt='Plan dinner in Paris tonight for 4 people. I like Italian food.',
+    tools=['get_weather', 'search_restaurants', 'book_reservation'],
+)
+
+print(response.text)
+# Model may call multiple tools:
+# 1. get_weather("Paris") to check conditions
+# 2. search_restaurants("Paris", "Italian") to find options
+# 3. book_reservation("Le Bistro", "7:00 PM", 4) to book
+```
+
+## Tool Choice Strategies
+
+Control how the model uses tools:
+
+<CodeGroup>
+```typescript JavaScript
+// Auto: Model decides when to use tools (default)
+const { text } = await ai.generate({
+  prompt: 'What is the weather?',
+  tools: [getWeatherTool],
+  toolChoice: 'auto',
+});
+
+// Required: Model MUST use at least one tool
+const { text } = await ai.generate({
+  prompt: 'Get me some data',
+  tools: [getWeatherTool, searchTool],
+  toolChoice: 'required',
+});
+
+// None: Model cannot use tools
+const { text } = await ai.generate({
+  prompt: 'Tell me about weather',
+  tools: [getWeatherTool],
+  toolChoice: 'none',
+});
+```
+
+```python Python
+# Auto: Model decides when to use tools (default)
+response = await ai.generate(
+    prompt='What is the weather?',
+    tools=['get_weather'],
+    tool_choice='auto',
+)
+
+# Required: Model MUST use at least one tool
+response = await ai.generate(
+    prompt='Get me some data',
+    tools=['get_weather', 'search_tool'],
+    tool_choice='required',
+)
+
+# None: Model cannot use tools
+response = await ai.generate(
+    prompt='Tell me about weather',
+    tools=['get_weather'],
+    tool_choice='none',
+)
+```
+</CodeGroup>
+
+## Tool Interrupts (Human-in-the-Loop)
+
+**Interrupts** let you pause tool execution for human approval - perfect for sensitive operations like financial transactions or data deletion.
+
+<CodeGroup>
+```typescript JavaScript
+const deleteUserTool = ai.defineTool(
+  {
+    name: 'deleteUser',
+    description: 'Delete a user account (requires confirmation)',
+    inputSchema: z.object({ userId: z.string() }),
+    interrupt: true, // Pause execution for approval
+  },
+  async ({ userId }) => {
+    // This won't execute automatically
+    return `User ${userId} deleted`;
+  }
+);
+
+// First generate - tool is NOT executed
+const response = await ai.generate({
+  prompt: 'Delete user account 12345',
+  tools: [deleteUserTool],
+});
+
+// Check for interrupts
+if (response.interrupts && response.interrupts.length > 0) {
+  const interrupt = response.interrupts[0];
+  console.log('Tool call pending approval:', interrupt.toolRequest.name);
+  console.log('Arguments:', interrupt.toolRequest.input);
+  
+  // Show to user: "Confirm delete user 12345? [Yes/No]"
+  const userApproved = await getUserConfirmation();
+  
+  if (userApproved) {
+    // Resume with approval
+    const resumedResponse = await ai.generate({
+      prompt: 'Delete user account 12345',
+      tools: [deleteUserTool],
+      messages: response.messages,
+      resume: {
+        respond: deleteUserTool.respond(interrupt, 'User confirmed deletion'),
+      },
+    });
+  }
+}
+```
+
+```python Python
+from genkit.blocks.tools import tool_response
+
+@ai.tool(interrupt=True)
+def delete_user(user_id: str) -> str:
+    """Delete a user account (requires confirmation)."""
+    # This won't execute automatically
+    return f"User {user_id} deleted"
+
+# First generate - tool is NOT executed
+response = await ai.generate(
+    prompt='Delete user account 12345',
+    tools=['delete_user'],
+)
+
+# Check for interrupts
+if response.interrupts:
+    interrupt = response.interrupts[0]
+    print(f'Tool call pending approval: {interrupt.tool_request.name}')
+    print(f'Arguments: {interrupt.tool_request.input}')
+    
+    # Show to user: "Confirm delete user 12345? [Yes/No]"
+    user_approved = await get_user_confirmation()
+    
+    if user_approved:
+        # Resume with approval
+        resumed_response = await ai.generate(
+            prompt='Delete user account 12345',
+            tools=['delete_user'],
+            messages=response.messages,
+            resume={
+                'respond': tool_response(interrupt, 'User confirmed deletion'),
+            },
+        )
+```
+</CodeGroup>
+
+### Interrupt Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Model decides to call deleteUser(userId="12345")                  │
+├─────────────────────────────────────────────────────────────────────┤
+│ 2. Genkit sees interrupt=true, PAUSES execution                      │
+├─────────────────────────────────────────────────────────────────────┤
+│ 3. Response includes tool call in response.interrupts                │
+├─────────────────────────────────────────────────────────────────────┤
+│ 4. Your app shows confirmation dialog to user                        │
+├─────────────────────────────────────────────────────────────────────┤
+│ 5. User approves/rejects                                              │
+├─────────────────────────────────────────────────────────────────────┤
+│ 6. Resume with tool response (approved or rejected)                  │
+├─────────────────────────────────────────────────────────────────────┤
+│ 7. Model incorporates response and continues                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## Max Turns (Limiting Tool Iterations)
+
+Prevent infinite tool calling loops:
+
+<CodeGroup>
+```typescript JavaScript
+const { text } = await ai.generate({
+  prompt: 'Research quantum computing',
+  tools: [searchTool, analyzeTool],
+  maxTurns: 5, // Stop after 5 model-tool interactions
+});
+```
+
+```python Python
+response = await ai.generate(
+    prompt='Research quantum computing',
+    tools=['search_tool', 'analyze_tool'],
+    max_turns=5, # Stop after 5 model-tool interactions
+)
+```
+</CodeGroup>
+
+Default is typically 5 turns. Each turn = model call + tool execution(s).
+
+## Return Tool Requests Without Execution
+
+Inspect what tools the model wants to call without executing them:
+
+```typescript
+const { text, toolRequests } = await ai.generate({
+  prompt: 'What is the weather in Tokyo?',
+  tools: [getWeatherTool],
+  returnToolRequests: true, // Don't auto-execute
+});
+
+console.log(toolRequests);
+// [{ name: 'getWeather', input: { city: 'Tokyo' } }]
+
+// Manually execute
+const result = await getWeatherTool({ city: 'Tokyo' });
+```
+
+Useful for:
+- Debugging tool selection
+- Custom tool execution logic
+- Rate limiting
+- Logging/auditing
+
+## Tool Best Practices
+
+### 1. Write Clear Descriptions
+
+The model uses descriptions to decide when to call tools:
+
+```python
+@ai.tool()
+def get_weather(city: str) -> dict:
+    """Get current weather for a city.
+    
+    Use this tool when:
+    - User asks about weather conditions
+    - User mentions temperature, rain, or forecast
+    - Planning outdoor activities
+    
+    Args:
+        city: Full city name (e.g., "San Francisco", not "SF")
+    
+    Returns:
+        Weather data including temperature (Fahrenheit), conditions, humidity
+    """
+    ...
+```
+
+### 2. Use Detailed Schema Descriptions
+
+<CodeGroup>
+```typescript JavaScript
+const searchTool = ai.defineTool(
+  {
+    name: 'search',
+    description: 'Search the web for information',
+    inputSchema: z.object({
+      query: z.string()
+        .describe('Search query. Be specific and include relevant keywords.'),
+      maxResults: z.number()
+        .optional()
+        .describe('Maximum number of results to return (default: 5, max: 20)'),
+    }),
+  },
+  async (input) => { /* ... */ }
+);
+```
+
+```python Python
+from pydantic import BaseModel, Field
+
+class SearchInput(BaseModel):
+    query: str = Field(description="Search query. Be specific and include relevant keywords.")
+    max_results: int | None = Field(default=5, description="Maximum results to return (max: 20)")
+
+@ai.tool()
+def search(input: SearchInput) -> list[dict]:
+    """Search the web for information."""
+    ...
+```
+</CodeGroup>
+
+### 3. Handle Errors Gracefully
+
+Tools should return user-friendly error messages:
+
+```python
+@ai.tool()
+def get_stock_price(symbol: str) -> dict:
+    """Get current stock price."""
+    try:
+        # API call...
+        return {'symbol': symbol, 'price': 150.25}
+    except APIError as e:
+        # Return error as data, not exception
+        return {'error': f'Could not fetch price for {symbol}: {str(e)}'}
+```
+
+### 4. Use Interrupts for Sensitive Actions
+
+Always use `interrupt=True` for:
+- Financial transactions
+- Data deletion
+- Sending emails/messages
+- Modifying user data
+- External API calls with side effects
+
+### 5. Keep Tools Focused
+
+Each tool should do one thing well:
+
+```python
+# Good: Focused tools
+@ai.tool()
+def get_weather(city: str) -> dict: ...
+
+@ai.tool()
+def get_forecast(city: str, days: int) -> dict: ...
+
+# Bad: Tool does too much
+@ai.tool()
+def weather_everything(city: str, action: str, days: int) -> dict: ...
+```
+
+## Real-World Example: Travel Agent
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+ai = Genkit(plugins=[GoogleGenAI()], model=gemini_2_0_flash)
+
+@ai.tool()
+def get_weather(city: str) -> dict:
+    """Get current weather for a city."""
+    # Call weather API
+    return {'temperature': 72, 'conditions': 'Sunny'}
+
+@ai.tool()
+def search_flights(origin: str, destination: str, date: str) -> list[dict]:
+    """Search for flights between cities."""
+    # Call flight API
+    return [
+        {'airline': 'United', 'price': 350, 'departure': '10:00 AM'},
+        {'airline': 'Delta', 'price': 380, 'departure': '2:00 PM'},
+    ]
+
+@ai.tool()
+def search_hotels(city: str, checkin: str, checkout: str) -> list[dict]:
+    """Search for hotels in a city."""
+    # Call hotel API
+    return [
+        {'name': 'Grand Hotel', 'price': 200, 'rating': 4.5},
+        {'name': 'City Inn', 'price': 150, 'rating': 4.0},
+    ]
+
+@ai.tool(interrupt=True)
+def book_flight(flight_id: str, passenger: dict) -> dict:
+    """Book a flight (requires confirmation)."""
+    # This will pause for user confirmation
+    return {'confirmation': 'ABC123', 'flight': flight_id}
+
+@ai.flow()
+async def travel_planner(request: str) -> str:
+    """Plan a trip with weather, flights, and hotels."""
+    response = await ai.generate(
+        prompt=f"Help plan this trip: {request}",
+        tools=['get_weather', 'search_flights', 'search_hotels', 'book_flight'],
+    )
+    
+    # Check for interrupts
+    if response.interrupts:
+        # Return to user for confirmation
+        return f"Pending confirmation: {response.interrupts[0].tool_request.input}"
+    
+    return response.text
+
+# Usage
+result = await travel_planner(
+    "I want to go to Paris next Friday for 3 days. Book the cheapest flight."
+)
+# Model will:
+# 1. get_weather("Paris") - check conditions
+# 2. search_flights("San Francisco", "Paris", "2024-03-15") - find options
+# 3. search_hotels("Paris", "2024-03-15", "2024-03-18") - find hotels
+# 4. book_flight(...) - PAUSES for user confirmation
+```
+
+## Next Steps
+
+- Learn about [Flows](/concepts/flows) - building multi-step workflows with tools
+- Explore [Prompts](/concepts/prompts) - using tools in prompt templates
+- See [Observability](/concepts/observability) - tracing tool executions

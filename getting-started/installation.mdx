@@ -1,0 +1,203 @@
+---
+title: Installation
+description: Install Genkit for JavaScript, Go, or Python to start building AI-powered applications
+---
+
+Genkit is available for multiple programming languages. Choose your preferred language and follow the installation instructions below.
+
+## JavaScript/TypeScript
+
+Genkit for JavaScript/TypeScript is production-ready with full feature support.
+
+### Install Genkit Core
+
+Install the core Genkit package using your preferred package manager:
+
+<CodeGroup>
+```bash npm
+npm install genkit
+```
+
+```bash yarn
+yarn add genkit
+```
+
+```bash pnpm
+pnpm add genkit
+```
+</CodeGroup>
+
+### Install Model Provider Plugin
+
+Genkit uses plugins to integrate with AI model providers. Install at least one provider:
+
+<CodeGroup>
+```bash Google AI (Gemini)
+npm install @genkit-ai/google-genai
+```
+
+```bash Anthropic (Claude)
+npm install @genkit-ai/anthropic
+```
+
+```bash Ollama (Local Models)
+npm install genkitx-ollama
+```
+</CodeGroup>
+
+### Install Genkit CLI
+
+The Genkit CLI provides development tools including the Developer UI for testing and debugging:
+
+```bash
+npm install -g genkit-cli
+```
+
+Verify the installation:
+
+```bash
+genkit --version
+```
+
+## Go
+
+Genkit for Go is production-ready with full feature support.
+
+### Install Genkit Package
+
+Add Genkit to your Go project:
+
+```bash
+go get github.com/firebase/genkit/go
+```
+
+### Install Plugin Packages
+
+Install the provider plugin you want to use:
+
+```bash Google AI
+go get github.com/firebase/genkit/go/plugins/googlegenai
+```
+
+```bash Anthropic
+go get github.com/firebase/genkit/go/plugins/anthropic
+```
+
+```bash Ollama
+go get github.com/firebase/genkit/go/plugins/ollama
+```
+
+### Install Genkit CLI
+
+The CLI is the same for all languages:
+
+```bash
+curl -sL cli.genkit.dev | bash
+```
+
+Or using npm:
+
+```bash
+npm install -g genkit-cli
+```
+
+## Python
+
+<Note>Python support is currently in **Alpha** with core functionality available.</Note>
+
+Genkit for Python is in early development. The core features are functional, but the API may change.
+
+### Install Genkit Core
+
+Install using pip:
+
+```bash
+pip install genkit
+```
+
+Or using uv (recommended for faster installs):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install genkit
+```
+
+### Install with Provider Plugin
+
+You can install Genkit with provider plugins as optional dependencies:
+
+```bash Google AI
+pip install "genkit[google-genai]"
+```
+
+```bash Ollama
+pip install "genkit[ollama]"
+```
+
+```bash OpenAI Compatible
+pip install "genkit[openai]"
+```
+
+### Install Genkit CLI
+
+The CLI works across all languages:
+
+```bash
+npm install -g genkit-cli
+```
+
+## Next Steps
+
+Once you've installed Genkit, continue with the quickstart guide for your language:
+
+<CardGroup cols={3}>
+  <Card title="JavaScript Quickstart" icon="js" href="/getting-started/javascript-quickstart">
+    Get started with JavaScript/TypeScript
+  </Card>
+  <Card title="Go Quickstart" icon="golang" href="/getting-started/go-quickstart">
+    Get started with Go
+  </Card>
+  <Card title="Python Quickstart" icon="python" href="/getting-started/python-quickstart">
+    Get started with Python
+  </Card>
+</CardGroup>
+
+## Verify Your Installation
+
+To verify everything is installed correctly:
+
+1. Check that your language-specific package is available (import it in your code)
+2. Run `genkit --version` to confirm the CLI is installed
+3. Follow the quickstart for your language to create your first AI application
+
+## Troubleshooting
+
+### Node.js Version
+
+Genkit requires Node.js 18 or later. Check your version:
+
+```bash
+node --version
+```
+
+### Go Version
+
+Genkit requires Go 1.21 or later:
+
+```bash
+go version
+```
+
+### Python Version
+
+Genkit requires Python 3.10 or later:
+
+```bash
+python --version
+```
+
+### Permission Issues
+
+If you encounter permission errors when installing the CLI globally, you may need to use `sudo` (on macOS/Linux) or run your terminal as administrator (on Windows).
+
+Alternatively, configure npm to use a different directory for global installations.

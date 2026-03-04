@@ -1,0 +1,621 @@
+---
+title: Plugins
+description: Extend Genkit with model providers, telemetry, and custom capabilities
+---
+
+Plugins are Genkit's primary extension mechanism. They add new capabilities like model providers, telemetry backends, vector stores, and custom actions.
+
+## What are Plugins?
+
+A **plugin** extends Genkit by registering new actions (models, tools, retrievers, etc.) and providing configuration for external services.
+
+Plugins can:
+- **Provide AI models**: Gemini, Claude, GPT, Llama, etc.
+- **Add telemetry**: Cloud Trace, Datadog, Sentry, etc.
+- **Enable vector search**: Pinecone, Chroma, Vertex AI Vector Search
+- **Add safety checks**: Content filtering, PII detection
+- **Integrate frameworks**: Express, Flask, FastAPI
+- **Register custom tools**: Any function you want models to call
+
+## Using Plugins
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { googleCloud } from '@genkit-ai/google-cloud';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),              // Gemini models
+    googleCloud(),           // Cloud Trace + Logging
+  ],
+});
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI
+from genkit.plugins.google_cloud import GoogleCloud
+
+ai = Genkit(
+    plugins=[
+        GoogleGenAI(),       # Gemini models
+        GoogleCloud(),       # Cloud Trace + Logging
+    ],
+)
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/plugins/googleai"
+    "github.com/firebase/genkit/go/plugins/googlecloud"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    if err := googleai.Init(ctx, nil); err != nil {
+        log.Fatal(err)
+    }
+    if err := googlecloud.Init(ctx, nil); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+</CodeGroup>
+
+## Plugin Architecture
+
+All plugins implement the same interface:
+
+```python
+class Plugin:
+    """Base class for all Genkit plugins."""
+    
+    name: str  # Plugin namespace (e.g., 'googleai', 'anthropic')
+    
+    async def init(self) -> list[Action]:
+        """One-time initialization. Returns actions to pre-register.
+        
+        Called lazily on first action resolution, NOT at registration.
+        """
+        ...
+    
+    async def resolve(self, kind: ActionKind, name: str) -> Action | None:
+        """Resolve a single action by kind and name.
+        
+        Returns None if this plugin doesn't handle the requested action.
+        Called for each action lookup.
+        """
+        ...
+    
+    async def list_actions(self) -> list[ActionMetadata]:
+        """List available actions without heavy initialization.
+        
+        Called by the Reflection API for DevUI action discovery.
+        Must be fast and not trigger expensive operations.
+        """
+        ...
+```
+
+## Plugin Lifecycle
+
+Plugins follow a four-phase lifecycle:
+
+### 1. Registration
+
+Plugins are registered when you create a Genkit instance:
+
+```python
+ai = Genkit(
+    plugins=[GoogleGenAI(), Anthropic()]
+)
+# Plugins are stored but NOT initialized yet
+```
+
+### 2. Lazy Initialization
+
+Plugins are initialized only when first used:
+
+```python
+# This triggers GoogleAI plugin initialization
+response = await ai.generate(
+    model='googleai/gemini-2.0-flash',
+    prompt='Hello!',
+)
+```
+
+On first use:
+1. Registry calls `plugin.init()`
+2. Plugin returns pre-registered actions
+3. Actions are cached in registry
+4. Subsequent calls use cached actions (no re-init)
+
+### 3. Action Resolution
+
+When you reference an action by name:
+
+```python
+# "googleai/gemini-2.0-flash" triggers resolution
+response = await ai.generate(
+    model='googleai/gemini-2.0-flash',
+    prompt='Hello!',
+)
+```
+
+Resolution flow:
+1. Check cache - already resolved?
+2. If namespaced (`googleai/...`), find that plugin
+3. Call `plugin.resolve(ActionKind.MODEL, 'googleai/gemini-2.0-flash')`
+4. Cache and return the action
+
+### 4. Action Discovery
+
+The Developer UI queries plugins without initializing them:
+
+```python
+# DevUI calls this on all plugins
+actions = await plugin.list_actions()
+# Returns metadata: names, types, descriptions
+# Does NOT trigger init() - must be fast
+```
+
+## Official Plugins
+
+### Model Providers
+
+| Plugin | Models | Installation |
+|--------|--------|-------------|
+| **Google AI** | Gemini, Imagen, Veo, Lyria, TTS | `npm i @genkit-ai/google-genai`<br/>`pip install genkit[google-genai]` |
+| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus | `npm i @genkit-ai/anthropic`<br/>`pip install genkit[anthropic]` |
+| **Vertex AI** | Model Garden (1000+ models) | `npm i @genkit-ai/vertexai`<br/>`pip install genkit[vertexai]` |
+| **Ollama** | Llama, Mistral, CodeLlama (local) | `npm i @genkit-ai/ollama`<br/>`pip install genkit[ollama]` |
+| **OpenAI-compatible** | Any OpenAI-compatible API | `npm i @genkit-ai/compat-oai`<br/>`pip install genkit[compat-oai]` |
+| **Mistral AI** | Mistral, Mixtral models | `npm i @genkit-ai/mistral`<br/>`pip install genkit[mistral]` |
+| **DeepSeek** | DeepSeek models | `npm i @genkit-ai/deepseek`<br/>`pip install genkit[deepseek]` |
+| **xAI** | Grok models | `npm i @genkit-ai/xai`<br/>`pip install genkit[xai]` |
+
+### Telemetry & Observability
+
+| Plugin | Purpose | Installation |
+|--------|---------|-------------|
+| **Google Cloud** | Cloud Trace + Cloud Logging | `npm i @genkit-ai/google-cloud`<br/>`pip install genkit[google-cloud]` |
+| **Firebase** | Firebase telemetry + Auth | `npm i @genkit-ai/firebase`<br/>`pip install genkit[firebase]` |
+| **Observability** | Sentry, Datadog, Honeycomb | `npm i @genkit-ai/observability`<br/>`pip install genkit[observability]` |
+
+### Vector Stores
+
+| Plugin | Purpose | Installation |
+|--------|---------|-------------|
+| **Vertex AI Vector Search** | Production vector DB | `npm i @genkit-ai/vertexai`<br/>`pip install genkit[vertexai]` |
+| **Pinecone** | Vector search | `npm i @genkit-ai/pinecone` |
+| **Chroma** | Local vector DB | `npm i @genkit-ai/chroma` |
+| **Dev Local Vector Store** | Development/testing | `npm i @genkit-ai/dev-local-vectorstore`<br/>`pip install genkit[dev-local-vectorstore]` |
+
+### Safety & Evaluation
+
+| Plugin | Purpose | Installation |
+|--------|---------|-------------|
+| **Checks** | Content safety guardrails | `npm i @genkit-ai/checks`<br/>`pip install genkit[checks]` |
+| **Evaluators** | RAGAS metrics, custom evals | `npm i @genkit-ai/evaluators`<br/>`pip install genkit[evaluators]` |
+
+### Framework Integration
+
+| Plugin | Purpose | Installation |
+|--------|---------|-------------|
+| **Express** | Node.js HTTP server | `npm i @genkit-ai/express` |
+| **Flask** | Python HTTP server | `pip install genkit[flask]` |
+| **Next.js** | Next.js integration | `npm i @genkit-ai/next` |
+
+## Community Plugins
+
+Community-maintained plugins (best-effort support):
+
+- **Amazon Bedrock**: Claude, Llama, Titan + AWS X-Ray telemetry
+- **Azure AI**: Azure Monitor telemetry
+- **Cloudflare Workers AI**: Edge AI models + OTLP telemetry
+- **Cohere**: Command models + reranking
+- **HuggingFace**: Inference API models
+- **Microsoft Foundry**: Azure AI Foundry (11,000+ models)
+
+## Plugin Configuration
+
+Most plugins accept configuration options:
+
+<CodeGroup>
+```typescript JavaScript
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI({
+      apiKey: process.env.GOOGLE_API_KEY,
+      apiVersion: 'v1beta',
+    }),
+  ],
+});
+```
+
+```python Python
+from genkit.plugins.google_genai import GoogleGenAI
+import os
+
+ai = Genkit(
+    plugins=[
+        GoogleGenAI(
+            api_key=os.getenv('GOOGLE_API_KEY'),
+            api_version='v1beta',
+        ),
+    ],
+)
+```
+</CodeGroup>
+
+### Environment Variables
+
+Most plugins support environment variable configuration:
+
+```bash
+# Google AI
+export GOOGLE_API_KEY=your-api-key
+
+# Anthropic
+export ANTHROPIC_API_KEY=your-api-key
+
+# OpenAI-compatible
+export OPENAI_API_KEY=your-api-key
+export OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+## Creating Custom Plugins
+
+### Basic Plugin
+
+Create a custom plugin to add your own models or tools:
+
+```python
+from genkit.core.plugin import Plugin
+from genkit.core.action import Action, ActionMetadata
+from genkit.core.action.types import ActionKind
+
+class MyPlugin(Plugin):
+    """Custom plugin example."""
+    
+    name = 'myplugin'
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+    
+    async def init(self) -> list[Action]:
+        """Return actions to pre-register (optional)."""
+        return []
+    
+    async def resolve(self, kind: ActionKind, name: str) -> Action | None:
+        """Resolve actions on-demand."""
+        if kind == ActionKind.MODEL:
+            if name == 'myplugin/my-model':
+                return self._create_model(name)
+        return None
+    
+    async def list_actions(self) -> list[ActionMetadata]:
+        """List available actions for DevUI."""
+        return [
+            ActionMetadata(
+                kind=ActionKind.MODEL,
+                name='myplugin/my-model',
+                description='My custom model',
+            ),
+        ]
+    
+    def _create_model(self, name: str) -> Action:
+        """Create model action."""
+        # Define your model implementation...
+        ...
+
+# Usage
+ai = Genkit(plugins=[MyPlugin(api_key='...')])
+response = await ai.generate(
+    model='myplugin/my-model',
+    prompt='Hello!',
+)
+```
+
+### Plugin with Multiple Action Types
+
+```python
+class AdvancedPlugin(Plugin):
+    name = 'advanced'
+    
+    async def resolve(self, kind: ActionKind, name: str) -> Action | None:
+        # Handle different action types
+        if kind == ActionKind.MODEL:
+            return self._resolve_model(name)
+        elif kind == ActionKind.EMBEDDER:
+            return self._resolve_embedder(name)
+        elif kind == ActionKind.RETRIEVER:
+            return self._resolve_retriever(name)
+        return None
+    
+    def _resolve_model(self, name: str) -> Action | None:
+        if name == 'advanced/my-model':
+            return self._create_model()
+        return None
+    
+    def _resolve_embedder(self, name: str) -> Action | None:
+        if name == 'advanced/embedder':
+            return self._create_embedder()
+        return None
+    
+    def _resolve_retriever(self, name: str) -> Action | None:
+        if name == 'advanced/retriever':
+            return self._create_retriever()
+        return None
+```
+
+## Plugin Namespaces
+
+Each plugin has a **namespace** that prefixes its actions:
+
+```
+[plugin-namespace]/[action-name]
+```
+
+Examples:
+- `googleai/gemini-2.0-flash` - plugin: `googleai`, model: `gemini-2.0-flash`
+- `anthropic/claude-3-5-sonnet` - plugin: `anthropic`, model: `claude-3-5-sonnet`
+- `myplugin/my-model` - plugin: `myplugin`, model: `my-model`
+
+Namespaces prevent conflicts between plugins that might have similarly named actions.
+
+## Plugin Discovery
+
+The Developer UI uses `list_actions()` to discover available actions:
+
+```python
+class MyPlugin(Plugin):
+    async def list_actions(self) -> list[ActionMetadata]:
+        """Fast listing without initialization."""
+        return [
+            ActionMetadata(
+                kind=ActionKind.MODEL,
+                name='myplugin/model-1',
+                description='First model',
+            ),
+            ActionMetadata(
+                kind=ActionKind.MODEL,
+                name='myplugin/model-2',
+                description='Second model',
+            ),
+            ActionMetadata(
+                kind=ActionKind.TOOL,
+                name='myplugin/my-tool',
+                description='Custom tool',
+            ),
+        ]
+```
+
+Important:
+- `list_actions()` must be **fast** - no expensive operations
+- Does NOT trigger `init()` - plugins remain uninitialized
+- Only returns metadata, not full action objects
+
+## Dynamic Action Providers
+
+For actions that are discovered at runtime (like MCP servers):
+
+```python
+from genkit.core.registry import DynamicActionProvider
+
+class MCPPlugin(Plugin, DynamicActionProvider):
+    """Plugin that discovers tools at runtime."""
+    
+    name = 'mcp'
+    
+    async def discover_tools(self) -> list[Action]:
+        """Called when registry can't find an action."""
+        # Connect to MCP server, get available tools
+        tools = await self.mcp_client.list_tools()
+        return [self._tool_to_action(t) for t in tools]
+```
+
+## Combining Multiple Plugins
+
+Use multiple plugins together:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI
+from genkit.plugins.anthropic import Anthropic
+from genkit.plugins.google_cloud import GoogleCloud
+from genkit.plugins.pinecone import Pinecone
+
+ai = Genkit(
+    plugins=[
+        # Model providers
+        GoogleGenAI(),
+        Anthropic(),
+        
+        # Telemetry
+        GoogleCloud(),
+        
+        # Vector store
+        Pinecone(api_key='...', environment='...'),
+    ],
+)
+
+# Use Gemini for chat
+response = await ai.generate(
+    model='googleai/gemini-2.0-flash',
+    prompt='Hello!',
+)
+
+# Use Claude for analysis
+analysis = await ai.generate(
+    model='anthropic/claude-3-5-sonnet',
+    prompt='Analyze this text...',
+)
+
+# Use Pinecone for retrieval
+results = await ai.retrieve(
+    retriever='pinecone/my-index',
+    query='quantum computing',
+)
+```
+
+## Plugin Best Practices
+
+### 1. Lazy Initialization
+
+Defer expensive operations to `init()`, not `__init__()`:
+
+```python
+class MyPlugin(Plugin):
+    def __init__(self, api_key: str):
+        # Fast - just store config
+        self.api_key = api_key
+        self.client = None  # Don't create yet!
+    
+    async def init(self) -> list[Action]:
+        # Expensive - only when first used
+        self.client = await create_api_client(self.api_key)
+        return []
+```
+
+### 2. Fast Action Listing
+
+`list_actions()` must be fast - no API calls:
+
+```python
+class MyPlugin(Plugin):
+    async def list_actions(self) -> list[ActionMetadata]:
+        # Good - static list
+        return [
+            ActionMetadata(kind=ActionKind.MODEL, name='myplugin/model-1'),
+            ActionMetadata(kind=ActionKind.MODEL, name='myplugin/model-2'),
+        ]
+    
+    # Bad - don't do this in list_actions()!
+    # await self.api.get_available_models()  # Too slow!
+```
+
+### 3. Graceful Degradation
+
+Handle missing API keys gracefully:
+
+```python
+class MyPlugin(Plugin):
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.getenv('MY_PLUGIN_API_KEY')
+    
+    async def init(self) -> list[Action]:
+        if not self.api_key:
+            logger.warning('MY_PLUGIN_API_KEY not set - plugin disabled')
+            return []
+        # Continue initialization...
+```
+
+### 4. Clear Error Messages
+
+Provide helpful errors when things go wrong:
+
+```python
+async def resolve(self, kind: ActionKind, name: str) -> Action | None:
+    if kind == ActionKind.MODEL:
+        if not self.api_key:
+            raise GenkitError(
+                status='FAILED_PRECONDITION',
+                message=f'Cannot use {name}: MY_PLUGIN_API_KEY not configured. '
+                        f'Set environment variable or pass api_key to plugin.',
+            )
+```
+
+## Example: Complete Custom Plugin
+
+A complete weather plugin:
+
+```python
+import httpx
+from genkit.core.plugin import Plugin
+from genkit.core.action import Action, ActionMetadata
+from genkit.core.action.types import ActionKind
+from pydantic import BaseModel
+
+class WeatherResult(BaseModel):
+    temperature: float
+    conditions: str
+    humidity: float
+
+class WeatherPlugin(Plugin):
+    """Provides weather data via API."""
+    
+    name = 'weather'
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.client = None
+    
+    async def init(self) -> list[Action]:
+        """Initialize HTTP client."""
+        self.client = httpx.AsyncClient(
+            base_url='https://api.weather.example.com',
+            headers={'Authorization': f'Bearer {self.api_key}'},
+        )
+        return []
+    
+    async def resolve(self, kind: ActionKind, name: str) -> Action | None:
+        """Resolve weather tools."""
+        if kind == ActionKind.TOOL:
+            if name == 'weather/get-current':
+                return self._create_get_current_tool()
+            elif name == 'weather/get-forecast':
+                return self._create_get_forecast_tool()
+        return None
+    
+    async def list_actions(self) -> list[ActionMetadata]:
+        """List available weather tools."""
+        return [
+            ActionMetadata(
+                kind=ActionKind.TOOL,
+                name='weather/get-current',
+                description='Get current weather for a city',
+            ),
+            ActionMetadata(
+                kind=ActionKind.TOOL,
+                name='weather/get-forecast',
+                description='Get weather forecast for a city',
+            ),
+        ]
+    
+    def _create_get_current_tool(self) -> Action:
+        """Create the get-current-weather tool."""
+        async def get_current(city: str) -> WeatherResult:
+            response = await self.client.get(f'/current?city={city}')
+            data = response.json()
+            return WeatherResult(
+                temperature=data['temp'],
+                conditions=data['conditions'],
+                humidity=data['humidity'],
+            )
+        
+        return Action(
+            name='weather/get-current',
+            kind=ActionKind.TOOL,
+            fn=get_current,
+        )
+
+# Usage
+ai = Genkit(plugins=[WeatherPlugin(api_key='your-key')])
+
+response = await ai.generate(
+    prompt='What is the weather in Tokyo?',
+    tools=['weather/get-current'],
+)
+```
+
+## Next Steps
+
+- Learn about [Architecture](/concepts/architecture) - how plugins fit into Genkit
+- Explore [Models](/concepts/models) - using model provider plugins
+- See [Observability](/concepts/observability) - telemetry plugins

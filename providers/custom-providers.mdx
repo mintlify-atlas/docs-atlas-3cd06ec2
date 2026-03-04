@@ -1,0 +1,718 @@
+---
+title: Creating Custom Providers
+description: Build custom model provider plugins for any AI service
+---
+
+Genkit's plugin system allows you to create custom model providers to integrate any AI service. Whether you're using a proprietary API, a custom inference server, or wrapping an existing SDK, you can build a Genkit plugin that provides first-class integration.
+
+## When to Build a Custom Provider
+
+Consider building a custom provider when:
+
+- You want to integrate a model service not yet supported by Genkit
+- You have a proprietary or internal AI API
+- You're running custom model infrastructure
+- You want to wrap an existing ML framework
+- You need special authentication or request handling
+
+## Plugin Architecture
+
+A Genkit plugin provides:
+
+1. **Initialization** - Set up clients, validate configuration
+2. **Action Registration** - Define available models and embedders
+3. **Action Resolution** - Handle dynamic model requests
+4. **Action Listing** - Provide discoverable model metadata
+
+## Basic Plugin Structure
+
+### Simple Plugin Example
+
+Here's a minimal custom provider:
+
+```typescript
+import { genkitPluginV2, GenkitPluginV2 } from 'genkit/plugin';
+import { modelRef, ModelReference } from 'genkit/model';
+import { z } from 'genkit';
+
+export interface MyProviderOptions {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+function myProviderPlugin(options?: MyProviderOptions): GenkitPluginV2 {
+  return genkitPluginV2({
+    name: 'my-provider',
+    
+    // Initialize plugin, return known models
+    async init() {
+      return [
+        // Return model actions here (or empty array)
+      ];
+    },
+    
+    // Resolve models on-demand
+    async resolve(actionType, actionName) {
+      if (actionType === 'model') {
+        // Define and return model action
+        return defineMyModel(actionName, options);
+      }
+      return undefined;
+    },
+    
+    // List available models
+    async list() {
+      // Return model metadata
+      return [];
+    },
+  });
+}
+
+export const myProvider = myProviderPlugin;
+```
+
+## Defining Models
+
+### Model Action
+
+A model action implements the interface for generating responses:
+
+```typescript
+import { model } from 'genkit/plugin';
+import { 
+  GenerateRequest, 
+  GenerateResponseData,
+  StreamingCallback,
+} from 'genkit';
+import { 
+  GenerationCommonConfigSchema,
+  ModelInfo,
+} from 'genkit/model';
+import { z } from 'genkit';
+
+const MyModelConfigSchema = GenerationCommonConfigSchema.extend({
+  // Add custom config options
+  customParam: z.string().optional(),
+});
+
+function defineMyModel(name: string, options?: MyProviderOptions) {
+  const modelInfo: ModelInfo = {
+    label: `My Provider - ${name}`,
+    supports: {
+      multiturn: true,
+      tools: true,
+      media: false,
+      systemRole: true,
+      output: ['text', 'json'],
+    },
+  };
+
+  return model({
+    name: `my-provider/${name}`,
+    configSchema: MyModelConfigSchema,
+    info: modelInfo,
+  }, async (request: GenerateRequest, streamingCallback?: StreamingCallback): Promise<GenerateResponseData> => {
+    // 1. Convert Genkit request to your API format
+    const apiRequest = convertToApiFormat(request);
+    
+    // 2. Call your AI service
+    const apiResponse = await callMyApi(apiRequest, options);
+    
+    // 3. Convert API response to Genkit format
+    return convertToGenkitFormat(apiResponse);
+  });
+}
+```
+
+### Model Reference Helper
+
+Provide a helper for creating model references:
+
+```typescript
+export const myProvider = myProviderPlugin as {
+  (options?: MyProviderOptions): GenkitPluginV2;
+  model(name: string, config?: any): ModelReference<typeof MyModelConfigSchema>;
+};
+
+(myProvider as any).model = (
+  name: string,
+  config?: any
+): ModelReference<typeof MyModelConfigSchema> => {
+  return modelRef({
+    name: `my-provider/${name}`,
+    config,
+    configSchema: MyModelConfigSchema,
+  });
+};
+```
+
+## Request/Response Conversion
+
+### Converting Genkit Requests
+
+```typescript
+import { GenerateRequest, MessageData, Part } from 'genkit';
+
+function convertToApiFormat(request: GenerateRequest) {
+  const messages = request.messages.map(message => ({
+    role: convertRole(message.role),
+    content: message.content.map(part => convertPart(part)),
+  }));
+
+  return {
+    model: request.model,
+    messages,
+    temperature: request.config?.temperature,
+    max_tokens: request.config?.maxOutputTokens,
+    // Map other config options...
+  };
+}
+
+function convertRole(role: string): string {
+  switch (role) {
+    case 'user': return 'user';
+    case 'model': return 'assistant';
+    case 'system': return 'system';
+    default: return role;
+  }
+}
+
+function convertPart(part: Part) {
+  if (part.text) {
+    return { type: 'text', text: part.text };
+  }
+  if (part.media) {
+    return { type: 'image_url', image_url: { url: part.media.url } };
+  }
+  if (part.toolRequest) {
+    return {
+      type: 'tool_use',
+      id: part.toolRequest.ref,
+      name: part.toolRequest.name,
+      input: part.toolRequest.input,
+    };
+  }
+  if (part.toolResponse) {
+    return {
+      type: 'tool_result',
+      tool_use_id: part.toolResponse.ref,
+      content: part.toolResponse.output,
+    };
+  }
+  throw new Error('Unsupported part type');
+}
+```
+
+### Converting API Responses
+
+```typescript
+import { GenerateResponseData, MessageData } from 'genkit';
+
+function convertToGenkitFormat(apiResponse: any): GenerateResponseData {
+  const message: MessageData = {
+    role: 'model',
+    content: [],
+  };
+
+  // Handle text responses
+  if (apiResponse.content?.text) {
+    message.content.push({ text: apiResponse.content.text });
+  }
+
+  // Handle tool calls
+  if (apiResponse.tool_calls) {
+    for (const toolCall of apiResponse.tool_calls) {
+      message.content.push({
+        toolRequest: {
+          name: toolCall.function.name,
+          input: toolCall.function.arguments,
+          ref: toolCall.id,
+        },
+      });
+    }
+  }
+
+  return {
+    message,
+    finishReason: apiResponse.stop_reason || 'stop',
+    usage: {
+      inputTokens: apiResponse.usage?.prompt_tokens || 0,
+      outputTokens: apiResponse.usage?.completion_tokens || 0,
+      totalTokens: apiResponse.usage?.total_tokens || 0,
+    },
+  };
+}
+```
+
+## Streaming Support
+
+### Implementing Streaming
+
+```typescript
+async function generateWithStreaming(
+  request: GenerateRequest,
+  streamingCallback?: StreamingCallback
+): Promise<GenerateResponseData> {
+  if (!streamingCallback) {
+    // Non-streaming path
+    return generateNonStreaming(request);
+  }
+
+  // Call streaming API
+  const stream = await callStreamingApi(request);
+  
+  let fullText = '';
+  let chunkIndex = 0;
+
+  for await (const chunk of stream) {
+    const text = chunk.delta?.content || '';
+    fullText += text;
+
+    // Send chunk to callback
+    streamingCallback({
+      index: chunkIndex++,
+      content: [{ text }],
+    });
+  }
+
+  // Return final response
+  return {
+    message: {
+      role: 'model',
+      content: [{ text: fullText }],
+    },
+    finishReason: 'stop',
+  };
+}
+```
+
+## Tool (Function) Support
+
+### Converting Tool Definitions
+
+```typescript
+import { ToolDefinition } from 'genkit/model';
+
+function convertTools(tools?: ToolDefinition[]) {
+  if (!tools) return undefined;
+
+  return tools.map(tool => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema || {},
+    },
+  }));
+}
+```
+
+### Handling Tool Responses
+
+See the request/response conversion examples above for handling `toolRequest` and `toolResponse` parts.
+
+## Embedder Support
+
+### Defining an Embedder
+
+```typescript
+import { embedder } from 'genkit/plugin';
+import { EmbedderReference, embedderRef } from 'genkit';
+
+function defineMyEmbedder(name: string, options?: MyProviderOptions) {
+  return embedder({
+    name: `my-provider/${name}`,
+    configSchema: z.object({
+      dimensions: z.number().optional(),
+    }),
+    info: {
+      dimensions: 768,
+      supports: {
+        input: ['text'],
+      },
+    },
+  }, async (input) => {
+    // Call your embedding API
+    const response = await callEmbeddingApi(input.content, options);
+    
+    return {
+      embeddings: [response.embedding],
+    };
+  });
+}
+
+// Add embedder helper
+(myProvider as any).embedder = (
+  name: string,
+  config?: any
+): EmbedderReference => {
+  return embedderRef({
+    name: `my-provider/${name}`,
+    config,
+  });
+};
+```
+
+## Advanced Features
+
+### Dynamic Model Discovery
+
+List available models from your API:
+
+```typescript
+async function listActions() {
+  try {
+    // Call your API to get available models
+    const models = await fetchAvailableModels();
+    
+    return models.map(m => 
+      modelActionMetadata({
+        name: `my-provider/${m.id}`,
+        info: {
+          label: m.name,
+          supports: m.capabilities,
+        },
+      })
+    );
+  } catch (error) {
+    console.error('Failed to list models:', error);
+    return [];
+  }
+}
+```
+
+### Authentication Handling
+
+```typescript
+function createAuthenticatedClient(options?: MyProviderOptions) {
+  const apiKey = options?.apiKey || process.env.MY_PROVIDER_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error(
+      'API key required. Set MY_PROVIDER_API_KEY or pass apiKey option.'
+    );
+  }
+
+  return new MyApiClient({
+    apiKey,
+    baseUrl: options?.baseUrl || 'https://api.example.com',
+  });
+}
+```
+
+### Custom Configuration Schema
+
+```typescript
+const CustomConfigSchema = GenerationCommonConfigSchema.extend({
+  // Provider-specific options
+  stylePreset: z.enum(['vivid', 'natural']).optional(),
+  qualityLevel: z.enum(['standard', 'hd']).optional(),
+  safetyLevel: z.number().min(0).max(5).optional(),
+});
+```
+
+### Error Handling
+
+```typescript
+import { GenkitError } from 'genkit';
+
+async function callApiWithErrorHandling(request: any) {
+  try {
+    return await myApiClient.generate(request);
+  } catch (error: any) {
+    // Map API errors to Genkit errors
+    if (error.status === 429) {
+      throw new GenkitError({
+        status: 'RESOURCE_EXHAUSTED',
+        message: 'Rate limit exceeded',
+      });
+    }
+    
+    if (error.status === 401) {
+      throw new GenkitError({
+        status: 'UNAUTHENTICATED',
+        message: 'Invalid API key',
+      });
+    }
+    
+    throw new GenkitError({
+      status: 'INTERNAL',
+      message: error.message || 'Unknown error',
+    });
+  }
+}
+```
+
+## Complete Example: Simple HTTP API Provider
+
+```typescript
+import { genkitPluginV2, GenkitPluginV2 } from 'genkit/plugin';
+import { model, modelActionMetadata } from 'genkit/plugin';
+import { 
+  GenerateRequest, 
+  GenerateResponseData,
+  MessageData,
+  modelRef,
+  z,
+} from 'genkit';
+import { 
+  GenerationCommonConfigSchema,
+  ModelInfo,
+} from 'genkit/model';
+
+export interface SimpleApiOptions {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+const ConfigSchema = GenerationCommonConfigSchema.extend({
+  temperature: z.number().min(0).max(1).optional(),
+});
+
+function defineSimpleModel(name: string, options?: SimpleApiOptions) {
+  const modelInfo: ModelInfo = {
+    label: `Simple API - ${name}`,
+    supports: {
+      multiturn: true,
+      tools: false,
+      media: false,
+      systemRole: true,
+      output: ['text'],
+    },
+  };
+
+  return model({
+    name: `simple-api/${name}`,
+    configSchema: ConfigSchema,
+    info: modelInfo,
+  }, async (request: GenerateRequest): Promise<GenerateResponseData> => {
+    const apiKey = options?.apiKey || process.env.SIMPLE_API_KEY;
+    const baseUrl = options?.baseUrl || 'https://api.example.com';
+
+    // Convert messages to simple text
+    const prompt = request.messages
+      .map(m => m.content.map(p => p.text).join(''))
+      .join('\n');
+
+    // Call API
+    const response = await fetch(`${baseUrl}/generate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: name,
+        prompt,
+        temperature: request.config?.temperature,
+        max_tokens: request.config?.maxOutputTokens,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Convert to Genkit format
+    const message: MessageData = {
+      role: 'model',
+      content: [{ text: data.text }],
+    };
+
+    return {
+      message,
+      finishReason: 'stop',
+      usage: {
+        inputTokens: data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      },
+    };
+  });
+}
+
+function simpleApiPlugin(options?: SimpleApiOptions): GenkitPluginV2 {
+  return genkitPluginV2({
+    name: 'simple-api',
+    
+    async init() {
+      // Return predefined models
+      return [
+        defineSimpleModel('base', options),
+        defineSimpleModel('advanced', options),
+      ];
+    },
+    
+    async resolve(actionType, actionName) {
+      if (actionType === 'model') {
+        return defineSimpleModel(actionName, options);
+      }
+      return undefined;
+    },
+    
+    async list() {
+      return [
+        modelActionMetadata({
+          name: 'simple-api/base',
+          info: { label: 'Simple API - Base' },
+        }),
+        modelActionMetadata({
+          name: 'simple-api/advanced',
+          info: { label: 'Simple API - Advanced' },
+        }),
+      ];
+    },
+  });
+}
+
+export const simpleApi = simpleApiPlugin as {
+  (options?: SimpleApiOptions): GenkitPluginV2;
+  model(name: string): any;
+};
+
+(simpleApi as any).model = (name: string) => {
+  return modelRef({
+    name: `simple-api/${name}`,
+    configSchema: ConfigSchema,
+  });
+};
+
+export default simpleApi;
+```
+
+### Using the Custom Provider
+
+```typescript
+import { genkit } from 'genkit';
+import { simpleApi } from './simple-api-provider';
+
+const ai = genkit({
+  plugins: [
+    simpleApi({
+      apiKey: process.env.SIMPLE_API_KEY,
+      baseUrl: 'https://api.example.com',
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: simpleApi.model('base'),
+  prompt: 'Hello!',
+});
+
+console.log(response.text());
+```
+
+## Real-World Examples
+
+### Study Existing Providers
+
+The best way to learn is by studying existing provider implementations:
+
+**Simple Provider:**
+- `~/workspace/source/js/plugins/ollama/src/index.ts` - Local model provider
+
+**Medium Complexity:**
+- `~/workspace/source/js/plugins/anthropic/src/index.ts` - Claude provider
+
+**Advanced Provider:**
+- `~/workspace/source/js/plugins/google-genai/src/googleai/index.ts` - Google AI provider
+- `~/workspace/source/js/plugins/compat-oai/src/index.ts` - OpenAI-compatible provider
+
+## Testing Your Provider
+
+### Unit Tests
+
+```typescript
+import { describe, it, expect } from '@jest/globals';
+import { myProvider } from './my-provider';
+
+describe('My Provider', () => {
+  it('should initialize plugin', async () => {
+    const plugin = myProvider({ apiKey: 'test-key' });
+    expect(plugin).toBeDefined();
+  });
+
+  it('should define model', async () => {
+    const model = myProvider.model('test-model');
+    expect(model.name).toBe('my-provider/test-model');
+  });
+});
+```
+
+### Integration Tests
+
+```typescript
+import { genkit } from 'genkit';
+import { myProvider } from './my-provider';
+
+const ai = genkit({
+  plugins: [myProvider({ apiKey: process.env.TEST_API_KEY })],
+});
+
+const response = await ai.generate({
+  model: myProvider.model('test-model'),
+  prompt: 'Hello, world!',
+});
+
+console.log(response.text());
+```
+
+## Best Practices
+
+1. **Follow naming conventions**: Use `provider/model-name` format
+2. **Validate configuration**: Check required options in constructor
+3. **Handle errors gracefully**: Map API errors to Genkit errors
+4. **Support streaming**: When your API supports it
+5. **Document capabilities**: Accurately report model capabilities
+6. **Provide type safety**: Export TypeScript types for configs
+7. **Test thoroughly**: Unit and integration tests
+8. **Version your plugin**: Semantic versioning
+9. **Document usage**: Provide README with examples
+
+## Publishing Your Provider
+
+Once your provider is ready:
+
+1. **Package structure**:
+```
+my-provider/
+├── src/
+│   └── index.ts
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+2. **package.json**:
+```json
+{
+  "name": "genkitx-my-provider",
+  "version": "1.0.0",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "peerDependencies": {
+    "genkit": "^0.9.0"
+  }
+}
+```
+
+3. **Publish to npm**:
+```bash
+npm publish
+```
+
+## Resources
+
+- [Genkit Plugin API Documentation](/concepts/plugins)
+- [Model Interface Documentation](/api/javascript/models)
+- [Existing Provider Source Code](https://github.com/firebase/genkit/tree/main/js/plugins)
+- [Genkit Discord Community](https://genkit.dev/discord)
+
+## Next Steps
+
+- [Study existing providers](/providers/overview)
+- [Learn about model interfaces](/api/javascript/models)
+- [Understand flows](/concepts/flows)
+- [Implement retrieval](/guides/rag)

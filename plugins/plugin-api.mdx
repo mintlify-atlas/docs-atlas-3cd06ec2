@@ -1,0 +1,550 @@
+---
+title: 'Plugin API Reference'
+description: 'Complete API reference for creating Genkit plugins'
+---
+
+# Plugin API Reference
+
+Complete reference for the Genkit Plugin API, including interfaces, types, and helper functions.
+
+## Core Plugin Interfaces
+
+### PluginProvider
+
+The main interface for defining a plugin:
+
+```typescript
+export interface PluginProvider {
+  name: string;
+  initializer: () =>
+    | InitializedPlugin
+    | void
+    | Promise<InitializedPlugin | void>;
+  resolver?: (action: ActionType, target: string) => Promise<void>;
+  listActions?: () => Promise<ActionMetadata[]>;
+}
+```
+
+**Properties:**
+
+- `name` - Unique plugin identifier (e.g., `'anthropic'`, `'my-plugin'`)
+- `initializer` - Function that returns registered actions or void
+- `resolver` - Optional function to resolve actions dynamically
+- `listActions` - Optional function to list available actions for discovery
+
+### InitializedPlugin
+
+Return type of the plugin initializer:
+
+```typescript
+export interface InitializedPlugin {
+  models?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  retrievers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  embedders?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  indexers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  evaluators?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+}
+```
+
+**Properties:**
+
+- `models` - Array of model actions
+- `retrievers` - Array of retriever actions
+- `embedders` - Array of embedder actions
+- `indexers` - Array of indexer actions
+- `evaluators` - Array of evaluator actions
+
+### ActionType
+
+Types of actions that can be registered:
+
+```typescript
+type ActionType = 
+  | 'model'
+  | 'retriever'
+  | 'embedder'
+  | 'indexer'
+  | 'evaluator'
+  | 'flow'
+  | 'tool';
+```
+
+## Plugin Creation Functions
+
+### genkitPlugin (API v1)
+
+Legacy plugin creation function:
+
+```typescript
+function genkitPlugin(
+  name: string,
+  initializer: (ai: Genkit) => Promise<void> | void,
+  resolver?: (ai: Genkit, actionType: ActionType, actionName: string) => Promise<void>,
+  listActions?: () => Promise<ActionMetadata[]>
+): GenkitPlugin
+```
+
+**Parameters:**
+
+- `name` - Plugin name
+- `initializer` - Function to register actions with Genkit instance
+- `resolver` - Optional dynamic action resolver
+- `listActions` - Optional action listing function
+
+**Example:**
+
+```typescript
+import { genkitPlugin } from 'genkit/plugin';
+
+export function myPlugin(options) {
+  return genkitPlugin(
+    'my-plugin',
+    async (ai) => {
+      ai.defineModel(/* ... */);
+    }
+  );
+}
+```
+
+### genkitPluginV2 (API v2 - Recommended)
+
+New plugin creation function with direct model usage support:
+
+```typescript
+function genkitPluginV2(config: {
+  name: string;
+  init: () => Promise<InitializedPlugin> | InitializedPlugin;
+  resolve?: (actionType: ActionType, name: string) => Action | undefined;
+  list?: () => Promise<ActionMetadata[]>;
+}): GenkitPluginV2
+```
+
+**Parameters:**
+
+- `name` - Plugin name
+- `init` - Function returning actions to register
+- `resolve` - Optional dynamic action resolver
+- `list` - Optional action listing function
+
+**Example:**
+
+```typescript
+import { genkitPluginV2 } from 'genkit/plugin';
+
+export function myPlugin(options) {
+  return genkitPluginV2({
+    name: 'my-plugin',
+    init: async () => {
+      return [createModel('model-1'), createModel('model-2')];
+    },
+    resolve: (actionType, name) => {
+      if (actionType === 'model') {
+        return createModel(name);
+      }
+    },
+  });
+}
+```
+
+## Model API
+
+### ModelAction
+
+Model action interface:
+
+```typescript
+interface ModelAction {
+  name: string;
+  label?: string;
+  configSchema: z.ZodTypeAny;
+  info?: ModelInfo;
+  generate: (
+    input: GenerateRequest,
+    streamingCallback?: (chunk: GenerateResponseChunk) => void
+  ) => Promise<GenerateResponseData>;
+}
+```
+
+### ModelInfo
+
+Model capability information:
+
+```typescript
+interface ModelInfo {
+  supports?: {
+    multiturn?: boolean;      // Multi-turn conversations
+    media?: boolean;          // Image/audio input
+    tools?: boolean;          // Tool calling
+    toolChoice?: boolean;     // Tool choice control
+    systemRole?: boolean;     // System messages
+    constrained?: 'all' | 'structured' | false;  // Structured output
+  };
+}
+```
+
+### GenerateRequest
+
+Input to model generation:
+
+```typescript
+interface GenerateRequest {
+  messages: MessageData[];
+  config?: Record<string, any>;
+  tools?: ToolDefinition[];
+  output?: {
+    schema?: z.ZodTypeAny;
+    format?: 'json' | 'text';
+  };
+}
+```
+
+### GenerateResponseData
+
+Model generation output:
+
+```typescript
+interface GenerateResponseData {
+  message: MessageData;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+  finishReason: 'stop' | 'length' | 'tool-call' | 'error' | 'blocked' | 'unknown';
+}
+```
+
+### MessageData
+
+Message structure:
+
+```typescript
+interface MessageData {
+  role: 'user' | 'model' | 'system' | 'tool';
+  content: Part[];
+}
+
+type Part = 
+  | { text: string }
+  | { media: { url: string; contentType?: string } }
+  | { toolRequest: ToolRequest }
+  | { toolResponse: ToolResponse }
+  | { custom: any };
+```
+
+### modelRef
+
+Create a model reference:
+
+```typescript
+function modelRef<ConfigSchema extends z.ZodTypeAny>(params: {
+  name: string;
+  config?: z.infer<ConfigSchema>;
+  configSchema?: ConfigSchema;
+  info?: ModelInfo;
+}): ModelReference<ConfigSchema>
+```
+
+**Example:**
+
+```typescript
+import { modelRef } from 'genkit/model';
+
+export const myModel = modelRef({
+  name: 'my-provider/my-model',
+  config: { temperature: 0.7 },
+  configSchema: MyConfigSchema,
+});
+```
+
+## Embedder API
+
+### EmbedderAction
+
+Embedder action interface:
+
+```typescript
+interface EmbedderAction {
+  name: string;
+  info?: {
+    dimensions?: number;
+    label?: string;
+  };
+  embed: (input: EmbedRequest) => Promise<EmbedResponse>;
+}
+```
+
+### EmbedRequest
+
+Input to embedder:
+
+```typescript
+interface EmbedRequest {
+  content: Document[];
+  options?: Record<string, any>;
+}
+```
+
+### EmbedResponse
+
+Embedder output:
+
+```typescript
+interface EmbedResponse {
+  embeddings: Embedding[];
+}
+
+interface Embedding {
+  embedding: number[];
+}
+```
+
+### embedderRef
+
+Create an embedder reference:
+
+```typescript
+function embedderRef<ConfigSchema extends z.ZodTypeAny = z.ZodTypeAny>(params: {
+  name: string;
+  config?: z.infer<ConfigSchema>;
+  configSchema?: ConfigSchema;
+}): EmbedderReference<ConfigSchema>
+```
+
+## Retriever API
+
+### RetrieverAction
+
+Retriever action interface:
+
+```typescript
+interface RetrieverAction {
+  name: string;
+  retrieve: (
+    query: Document,
+    options?: Record<string, any>
+  ) => Promise<{ documents: Document[] }>;
+}
+```
+
+### CommonRetrieverOptionsSchema
+
+Common retriever options:
+
+```typescript
+const CommonRetrieverOptionsSchema = z.object({
+  k: z.number().optional(),  // Number of results
+});
+```
+
+### retrieverRef
+
+Create a retriever reference:
+
+```typescript
+function retrieverRef<ConfigSchema extends z.ZodTypeAny = z.ZodTypeAny>(params: {
+  name: string;
+  info?: {
+    label?: string;
+  };
+  configSchema?: ConfigSchema;
+}): RetrieverReference<ConfigSchema>
+```
+
+## Indexer API
+
+### IndexerAction
+
+Indexer action interface:
+
+```typescript
+interface IndexerAction {
+  name: string;
+  index: (
+    documents: Document[],
+    options?: Record<string, any>
+  ) => Promise<void>;
+}
+```
+
+### indexerRef
+
+Create an indexer reference:
+
+```typescript
+function indexerRef<ConfigSchema extends z.ZodTypeAny = z.ZodTypeAny>(params: {
+  name: string;
+  info?: {
+    label?: string;
+  };
+  configSchema?: ConfigSchema;
+}): IndexerReference<ConfigSchema>
+```
+
+## Document API
+
+### Document
+
+Document class for text/data:
+
+```typescript
+class Document {
+  static fromText(text: string, metadata?: Record<string, any>): Document;
+  static fromData(data: any, dataType: string, metadata?: Record<string, any>): Document;
+  
+  text: string;
+  metadata?: Record<string, any>;
+  
+  toJSON(): any;
+}
+```
+
+**Example:**
+
+```typescript
+import { Document } from 'genkit';
+
+const doc = Document.fromText('Hello world', {
+  source: 'example',
+  timestamp: Date.now(),
+});
+```
+
+## Configuration Schemas
+
+### GenerationCommonConfigSchema
+
+Common generation config:
+
+```typescript
+const GenerationCommonConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  maxOutputTokens: z.number().optional(),
+  topK: z.number().optional(),
+  topP: z.number().min(0).max(1).optional(),
+  stopSequences: z.array(z.string()).optional(),
+});
+```
+
+## Utility Functions
+
+### getBasicUsageStats
+
+Calculate token usage:
+
+```typescript
+function getBasicUsageStats(
+  input: MessageData[],
+  output: MessageData
+): {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+```
+
+### modelActionMetadata
+
+Create model action metadata:
+
+```typescript
+function modelActionMetadata(params: {
+  name: string;
+  info: ModelInfo;
+}): ActionMetadata
+```
+
+## Type Guards
+
+### isModelAction
+
+```typescript
+function isModelAction(action: any): action is ModelAction
+```
+
+### isRetrieverAction
+
+```typescript
+function isRetrieverAction(action: any): action is RetrieverAction
+```
+
+## Complete Plugin Example
+
+```typescript
+import {
+  genkitPluginV2,
+  type GenkitPluginV2,
+} from 'genkit/plugin';
+import {
+  modelRef,
+  type ModelReference,
+  type GenerateRequest,
+  type GenerateResponseData,
+} from 'genkit/model';
+import { z } from 'genkit';
+
+const ConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+});
+
+type MyPluginOptions = {
+  apiKey?: string;
+};
+
+function myPlugin(options?: MyPluginOptions): GenkitPluginV2 {
+  const apiKey = options?.apiKey || process.env.MY_API_KEY;
+
+  return genkitPluginV2({
+    name: 'my-plugin',
+    init: async () => {
+      return [
+        {
+          name: 'my-plugin/model',
+          label: 'My Model',
+          configSchema: ConfigSchema,
+          info: {
+            supports: {
+              multiturn: true,
+              tools: true,
+            },
+          },
+          async generate(
+            input: GenerateRequest,
+            streamingCallback?
+          ): Promise<GenerateResponseData> {
+            // Implementation
+            return {
+              message: {
+                role: 'model',
+                content: [{ text: 'Response' }],
+              },
+              finishReason: 'stop',
+            };
+          },
+        },
+      ];
+    },
+  });
+}
+
+// Export with model helper
+export const myProvider = myPlugin as typeof myPlugin & {
+  model: (name: string) => ModelReference<typeof ConfigSchema>;
+};
+
+myProvider.model = (name: string) => {
+  return modelRef({
+    name: `my-plugin/${name}`,
+    configSchema: ConfigSchema,
+  });
+};
+
+export default myProvider;
+```
+
+## Links
+
+- [Creating Plugins Guide](/plugins/creating-plugins)
+- [Publishing Plugins](/plugins/publishing)
+- [Genkit Core Source](https://github.com/firebase/genkit/tree/main/js/core)
+- [Plugin Examples](https://github.com/firebase/genkit/tree/main/js/plugins)

@@ -1,0 +1,535 @@
+---
+title: Vertex AI Provider
+description: Enterprise-grade Google Cloud AI platform with advanced features
+---
+
+Vertex AI is Google Cloud's enterprise AI platform, offering advanced features, broader model access, and deep integration with Google Cloud services. Use Vertex AI for production applications that require governance, IAM control, and access to Model Garden.
+
+<Note>
+Vertex AI is part of the unified `@genkit-ai/google-genai` package. For simpler setup, see [Google AI](/providers/google-genai).
+</Note>
+
+## Installation
+
+```bash
+npm install @genkit-ai/google-genai
+```
+
+## Setup
+
+Vertex AI supports two authentication methods:
+
+### Method 1: Application Default Credentials (Recommended)
+
+This is the standard authentication method for production applications.
+
+**Prerequisites:**
+- Google Cloud project with billing enabled
+- Vertex AI API enabled
+- Appropriate IAM permissions
+
+**Local Development:**
+
+```bash
+# Authenticate with your Google account
+gcloud auth application-default login
+
+# Set your project
+gcloud config set project YOUR_PROJECT_ID
+```
+
+**Production (GCP):**
+
+Use a service account with the required permissions:
+- `roles/aiplatform.user`
+- `roles/storage.objectViewer` (for some features)
+
+**Configure the Plugin:**
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    vertexAI({
+      location: 'us-central1',  // Regional endpoint
+      // projectId: 'your-project', // Optional, auto-detected from ADC
+    }),
+  ],
+});
+```
+
+### Method 2: Express Mode (API Key)
+
+Vertex AI Express Mode provides a simplified way to try Vertex AI features using just an API key, without requiring full GCP project setup or billing.
+
+**Get an API Key:**
+1. Visit [Vertex AI Studio](https://console.cloud.google.com/vertex-ai/studio)
+2. Enable Express Mode
+3. Generate an API key
+
+**Configure the Plugin:**
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    vertexAI({
+      apiKey: process.env.VERTEX_EXPRESS_API_KEY,
+    }),
+  ],
+});
+```
+
+<Note>
+With Express Mode, you don't provide `projectId` or `location` in the config.
+</Note>
+
+## Available Models
+
+### Text Generation (Gemini)
+
+All Gemini models available through Google AI are also available on Vertex AI:
+
+- **gemini-2.5-flash** - Balanced performance and speed
+- **gemini-2.5-pro** - Most powerful Gemini model
+- **gemini-2.5-flash-lite** - Fastest option
+
+### Image Generation (Imagen)
+
+- **imagen-3.0-generate-002** - High-quality image generation
+- **imagen-3.0-fast-generate-001** - Faster generation
+
+### Music Generation (Lyria)
+
+**Vertex AI exclusive:**
+
+- **lyria-002** - Generate music and audio from text descriptions
+
+### Video Generation (Veo)
+
+- **veo-002** - Generate videos from text prompts
+
+### Embeddings
+
+- **text-embedding-005** - Latest embedding model
+- **text-embedding-004** - Previous generation
+- **text-multilingual-embedding-002** - Multilingual support
+
+## Usage Examples
+
+### Basic Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI({ location: 'us-central1' })],
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Explain quantum entanglement to a 10-year-old.',
+});
+
+console.log(response.text());
+```
+
+### Music Generation with Lyria
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('lyria-002'),
+  prompt: 'A cheerful, upbeat instrumental piano melody with a jazzy feel',
+  config: {
+    duration: 30, // seconds
+  },
+});
+
+const audioFile = response.media();
+if (audioFile) {
+  console.log('Generated audio:', audioFile.url);
+}
+```
+
+### Image Generation with Imagen
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('imagen-3.0-generate-002'),
+  prompt: 'A futuristic city with flying cars at night, cyberpunk style, highly detailed',
+  config: {
+    numberOfImages: 4,
+    aspectRatio: '16:9',
+  },
+});
+
+const images = response.media();
+images?.forEach((img, i) => {
+  console.log(`Image ${i + 1}:`, img.url);
+});
+```
+
+### Multimodal Input
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: [
+    { text: 'Analyze this image and describe what you see in detail.' },
+    { media: { url: 'gs://my-bucket/image.jpg' } }, // Cloud Storage URL
+  ],
+});
+
+console.log(response.text());
+```
+
+### Context Caching
+
+Reduce costs and latency for repeated prompts with large context:
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  system: {
+    text: largeSystemPrompt, // e.g., 50K tokens
+    metadata: {
+      cache: true,
+      cacheTTL: 3600, // 1 hour
+    },
+  },
+  prompt: 'Based on the system instructions, what should I do?',
+});
+```
+
+### Grounding with Google Search
+
+Ground model responses with real-time search results:
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: 'What are the latest developments in quantum computing?',
+  config: {
+    googleSearchRetrieval: {
+      dynamicRetrievalConfig: {
+        mode: 'MODE_DYNAMIC',
+        dynamicThreshold: 0.3,
+      },
+    },
+  },
+});
+
+console.log(response.text());
+// Response will include citations to search sources
+```
+
+### Function Calling
+
+```typescript
+import { z } from 'genkit';
+
+const queryDatabase = ai.defineTool(
+  {
+    name: 'queryDatabase',
+    description: 'Query the customer database',
+    inputSchema: z.object({
+      customerId: z.string(),
+    }),
+    outputSchema: z.object({
+      name: z.string(),
+      email: z.string(),
+    }),
+  },
+  async ({ customerId }) => {
+    // Query your database
+    return { name: 'John Doe', email: 'john@example.com' };
+  }
+);
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: 'Get the information for customer ID 12345',
+  tools: [queryDatabase],
+});
+
+console.log(response.text());
+```
+
+### Embeddings
+
+```typescript
+const embeddings = await ai.embed({
+  embedder: vertexAI.embedder('text-embedding-005'),
+  content: 'Vertex AI is a comprehensive ML platform',
+});
+
+console.log(embeddings); // 768-dimensional vector
+```
+
+## Model Garden Access
+
+Vertex AI Model Garden provides access to models from various providers:
+
+### Anthropic Claude via Model Garden
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    vertexAI({
+      location: 'us-east5',
+      projectId: 'your-project',
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: 'vertexai/claude-3-5-sonnet-v2@20241022',
+  prompt: 'Explain relativity',
+});
+```
+
+### Meta Llama Models
+
+```typescript
+const response = await ai.generate({
+  model: 'vertexai/llama-3-1-405b',
+  prompt: 'Write a poem about AI',
+});
+```
+
+## Vector Search Integration
+
+Vertex AI Vector Search enables high-performance similarity search for RAG applications.
+
+### Setup Vector Search Index
+
+```typescript
+import { vertexAIVectorStore } from '@genkit-ai/google-genai';
+
+const vectorStore = vertexAIVectorStore({
+  projectId: 'your-project',
+  location: 'us-central1',
+  indexId: 'your-index-id',
+  indexEndpointId: 'your-endpoint-id',
+});
+
+// Index documents
+await vectorStore.index([
+  { content: 'Document 1 content...' },
+  { content: 'Document 2 content...' },
+]);
+```
+
+### Retrieval-Augmented Generation (RAG)
+
+```typescript
+import { retrieve } from '@genkit-ai/rag';
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  prompt: 'What is our return policy?',
+  context: await retrieve({
+    retriever: vectorStore.retriever(),
+    query: 'return policy',
+    limit: 5,
+  }),
+});
+```
+
+## Configuration Options
+
+### Regional Endpoints
+
+Choose the region closest to your users:
+
+```typescript
+vertexAI({ location: 'us-central1' })  // Iowa, USA
+vertexAI({ location: 'us-west1' })     // Oregon, USA
+vertexAI({ location: 'europe-west1' }) // Belgium
+vertexAI({ location: 'asia-northeast1' }) // Tokyo
+```
+
+### Global Endpoint
+
+```typescript
+vertexAI({ location: 'global' })
+```
+
+<Warning>
+Some features like Lyria are only available in specific regions.
+</Warning>
+
+### Model Configuration
+
+```typescript
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Generate a story',
+  config: {
+    temperature: 1.2,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: 2048,
+    stopSequences: ['THE END'],
+  },
+});
+```
+
+## Advanced Features
+
+### Model Tuning
+
+Vertex AI supports fine-tuning Gemini models on your data:
+
+```bash
+# Create a tuning job (via gcloud CLI)
+gcloud ai models upload \
+  --region=us-central1 \
+  --display-name=my-tuned-model \
+  --container-image-uri=gcr.io/cloud-aiplatform/training/...
+```
+
+Then use your tuned model:
+
+```typescript
+const response = await ai.generate({
+  model: 'vertexai/projects/YOUR_PROJECT/locations/us-central1/models/my-tuned-model',
+  prompt: 'Test my tuned model',
+});
+```
+
+### Model Evaluation
+
+Use Vertex AI's evaluation tools to assess model performance:
+
+```typescript
+import { evaluate } from '@genkit-ai/google-genai';
+
+const results = await evaluate({
+  model: vertexAI.model('gemini-2.5-flash'),
+  testCases: [
+    { input: 'What is 2+2?', expectedOutput: '4' },
+    { input: 'Capital of France?', expectedOutput: 'Paris' },
+  ],
+  metrics: ['accuracy', 'latency'],
+});
+
+console.log(results);
+```
+
+### Request Logging
+
+Vertex AI automatically logs requests for monitoring and debugging:
+
+```typescript
+// View logs in Cloud Console:
+// https://console.cloud.google.com/logs
+```
+
+## Vertex AI vs Google AI
+
+| Feature | Vertex AI | Google AI |
+|---------|-----------|------------|
+| **Authentication** | ADC or API Key | API Key only |
+| **Setup Complexity** | Moderate (GCP project) | Simple |
+| **Production Ready** | Yes | Limited |
+| **Model Access** | All models + Model Garden | Gemini models only |
+| **IAM Integration** | Full GCP IAM | None |
+| **Vector Search** | Yes | No |
+| **Fine-tuning** | Yes | No |
+| **Monitoring** | Cloud Logging/Monitoring | None |
+| **SLA** | Available | None |
+| **Pricing** | Volume discounts available | Pay-per-use |
+| **Best For** | Enterprise, Production | Prototyping |
+
+## Best Practices
+
+1. **Use regional endpoints** close to your users for lower latency
+2. **Enable context caching** for prompts with repeated large context
+3. **Implement proper IAM controls** with service accounts
+4. **Monitor usage** with Cloud Monitoring
+5. **Use Vector Search** for RAG applications instead of manual similarity
+6. **Enable request logging** for debugging and auditing
+7. **Set up alerts** for quota limits and errors
+8. **Use Model Garden** to access diverse models without managing multiple APIs
+
+## Troubleshooting
+
+### Authentication Errors
+
+```
+Error: Could not load the default credentials
+```
+
+**Solution:**
+
+```bash
+gcloud auth application-default login
+```
+
+Or set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+```
+
+### API Not Enabled
+
+```
+Error: Vertex AI API has not been used in project...
+```
+
+**Solution:**
+
+```bash
+gcloud services enable aiplatform.googleapis.com
+```
+
+### Permission Denied
+
+```
+Error: Permission denied on resource project
+```
+
+**Solution:** Ensure your account or service account has the required IAM roles:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT \
+  --member='serviceAccount:YOUR_SA@YOUR_PROJECT.iam.gserviceaccount.com' \
+  --role='roles/aiplatform.user'
+```
+
+### Region Not Supported
+
+Some models are only available in specific regions. Check the [Vertex AI documentation](https://cloud.google.com/vertex-ai/docs/general/locations) for model availability.
+
+## Pricing
+
+Vertex AI pricing varies by:
+- Model type (Flash vs Pro)
+- Input/output token count
+- Additional features (context caching, grounding)
+- Region
+
+See the [Vertex AI Pricing page](https://cloud.google.com/vertex-ai/pricing) for details.
+
+**Cost Optimization Tips:**
+- Use `gemini-2.5-flash` for most tasks
+- Enable context caching for repeated prompts
+- Use batch predictions for high-volume processing
+- Set appropriate `maxOutputTokens` limits
+
+## Next Steps
+
+- [Google AI Provider](/providers/google-genai) - Simpler alternative for prototyping
+- [RAG with Vector Search](/guides/rag) - Build retrieval systems
+- [Model Evaluation](/guides/evaluation) - Test model performance
+- [Production Deployment](/deployment/overview) - Deploy to production

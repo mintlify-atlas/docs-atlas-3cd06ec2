@@ -1,0 +1,407 @@
+---
+title: Tool Calling
+description: Give AI models the ability to take actions and access external data
+---
+
+# Tool Calling
+
+Tool calling (also known as function calling) allows AI models to interact with external systems, access real-time data, and perform actions. Models can decide when to use tools and how to call them based on the conversation context.
+
+## Defining Tools
+
+Create tools that models can use:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const menuTool = ai.defineTool(
+  {
+    name: 'todaysMenu',
+    description: "Use this tool to retrieve all the items on today's menu",
+    inputSchema: z.object({}),
+    outputSchema: z.object({
+      menuData: z.array(z.object({
+        title: z.string(),
+        price: z.string(),
+        description: z.string(),
+      })),
+    }),
+  },
+  async () => {
+    return { menuData: getMenuFromDatabase() };
+  }
+);
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+)
+
+type WeatherInput struct {
+    Location string `json:"location"`
+}
+
+weatherTool := genkit.DefineTool(g, "getWeather",
+    "Gets the current weather for a location",
+    func(ctx *ai.ToolContext, input WeatherInput) (string, error) {
+        // Call your weather API here
+        return fmt.Sprintf("Weather in %s: 72°F and sunny", input.Location), nil
+    },
+)
+```
+
+```python Python
+from genkit import z
+
+@ai.tool()
+def get_weather(location: str) -> str:
+    """Gets the current weather for a location."""
+    # Call your weather API here
+    return f"Weather in {location}: 72°F and sunny"
+```
+
+</CodeGroup>
+
+## Using Tools
+
+Pass tools to the model and let it decide when to use them:
+
+<CodeGroup>
+
+```go Go
+response, _ := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("What's the weather like in San Francisco?"),
+    ai.WithTools(weatherTool),
+)
+fmt.Println(response.Text())
+```
+
+```typescript TypeScript
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: "What's the weather like in San Francisco?",
+  tools: [weatherTool]
+});
+
+console.log(text);
+```
+
+</CodeGroup>
+
+## Tool Choice Strategies
+
+Control when and how the model uses tools:
+
+<CodeGroup>
+
+```go Go
+// Auto: Model decides whether to use tools
+resp, _ := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("What's the weather in Tokyo?"),
+    ai.WithTools(weatherTool),
+    ai.WithToolChoice(ai.ToolChoiceAuto),
+)
+
+// Required: Model must use a tool
+resp, _ := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Get the weather data"),
+    ai.WithTools(weatherTool),
+    ai.WithToolChoice(ai.ToolChoiceRequired),
+)
+```
+
+</CodeGroup>
+
+## Structured Tool Output
+
+Define complex return types for tools:
+
+<CodeGroup>
+
+```go Go
+type WeatherData struct {
+    Location  string  `json:"location"`
+    TempC     float64 `json:"temp_c"`
+    TempF     float64 `json:"temp_f"`
+    Condition string  `json:"condition"`
+}
+
+weatherTool := genkit.DefineTool(g, "weather", 
+    "Get current weather for a location",
+    func(ctx *ai.ToolContext, input WeatherInput) (WeatherData, error) {
+        // Fetch weather data
+        return simulateWeather(input.Location), nil
+    },
+)
+```
+
+```typescript TypeScript
+const WeatherDataSchema = z.object({
+  location: z.string(),
+  tempC: z.number(),
+  tempF: z.number(),
+  condition: z.string(),
+});
+
+const weatherTool = ai.defineTool(
+  {
+    name: 'weather',
+    description: 'Get current weather for a location',
+    inputSchema: z.object({ location: z.string() }),
+    outputSchema: WeatherDataSchema,
+  },
+  async ({ location }) => {
+    return fetchWeatherData(location);
+  }
+);
+```
+
+</CodeGroup>
+
+## Tool Interrupts (Human-in-the-Loop)
+
+Pause execution for human approval before taking sensitive actions:
+
+<CodeGroup>
+
+```go Go
+type TransferInput struct {
+    ToAccount string  `json:"toAccount" jsonschema:"description=destination account ID"`
+    Amount    float64 `json:"amount" jsonschema:"description=amount in dollars (e.g. 50.00 for $50)"`
+}
+
+type TransferInterrupt struct {
+    Reason    string  `json:"reason"` // "insufficient_balance" or "confirm_large"
+    ToAccount string  `json:"toAccount"`
+    Amount    float64 `json:"amount"`
+    Balance   float64 `json:"balance,omitempty"`
+}
+
+transferTool := genkit.DefineTool(g, "transferMoney",
+    "Transfers money to another account. Use this when the user wants to send money.",
+    func(ctx *ai.ToolContext, input TransferInput) (TransferOutput, error) {
+        // Check if this is a large transfer that needs confirmation
+        if !ctx.IsResumed() && input.Amount > 100 {
+            return TransferOutput{}, ai.InterruptWith(ctx, TransferInterrupt{
+                "confirm_large", input.ToAccount, input.Amount, accountBalance,
+            })
+        }
+
+        // Process the transfer
+        accountBalance -= input.Amount
+        return TransferOutput{"completed", "Transfer successful", accountBalance}, nil
+    })
+```
+
+</CodeGroup>
+
+## Handling Interrupts
+
+Handle tool interrupts and resume execution:
+
+<CodeGroup>
+
+```go Go
+resp, err := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Transfer $5000 to account ABC123"),
+    ai.WithTools(transferTool),
+)
+
+if resp.FinishReason == ai.FinishReasonInterrupted {
+    for _, interrupt := range resp.Interrupts() {
+        meta, _ := ai.InterruptAs[TransferInterrupt](interrupt)
+
+        // Get user confirmation
+        fmt.Printf("Confirm transfer of $%.2f? (yes/no): ", meta.Amount)
+        if getUserConfirmation() {
+            // Resume with approval
+            part, _ := transferTool.RestartWith(interrupt)
+            resp, _ = genkit.Generate(ctx, g,
+                ai.WithMessages(resp.History()...),
+                ai.WithTools(transferTool),
+                ai.WithToolRestarts(part),
+            )
+        } else {
+            // Cancel the transfer
+            part, _ := transferTool.RespondWith(interrupt,
+                TransferOutput{"cancelled", "Transfer cancelled by user.", accountBalance})
+            resp, _ = genkit.Generate(ctx, g,
+                ai.WithMessages(resp.History()...),
+                ai.WithTools(transferTool),
+                ai.WithToolResponses(part),
+            )
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+## Modifying Tool Input on Resume
+
+Adjust tool parameters when resuming after an interrupt:
+
+<CodeGroup>
+
+```go Go
+if meta.Reason == "insufficient_balance" {
+    fmt.Printf("You requested $%.2f but only have $%.2f\n", meta.Amount, meta.Balance)
+    
+    // Restart with adjusted amount
+    part, err := transferTool.RestartWith(interrupt,
+        ai.WithNewInput(TransferInput{meta.ToAccount, meta.Balance}))
+    
+    resp, _ = genkit.Generate(ctx, g,
+        ai.WithMessages(resp.History()...),
+        ai.WithTools(transferTool),
+        ai.WithToolRestarts(part),
+    )
+}
+```
+
+</CodeGroup>
+
+## Multi-Step Tool Workflows
+
+Models can use multiple tools in sequence to accomplish complex tasks:
+
+<CodeGroup>
+
+```go Go
+// Define multiple tools
+searchTool := genkit.DefineTool(g, "search", "Search the web", searchFunc)
+calculatorTool := genkit.DefineTool(g, "calculator", "Perform calculations", calcFunc)
+weatherTool := genkit.DefineTool(g, "weather", "Get weather data", weatherFunc)
+
+// Model can use them in sequence
+resp, _ := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("What's the temperature difference between Tokyo and Paris?"),
+    ai.WithTools(searchTool, calculatorTool, weatherTool),
+)
+// Model will:
+// 1. Call weatherTool for Tokyo
+// 2. Call weatherTool for Paris
+// 3. Call calculatorTool to find the difference
+// 4. Return the answer
+```
+
+</CodeGroup>
+
+## Best Practices
+
+### Write Clear Tool Descriptions
+
+Help the model understand when and how to use tools:
+
+```go Go
+genkit.DefineTool(g, "searchProducts",
+    "Search for products in the catalog. Use this when the user asks about product availability, features, or pricing.",
+    searchFunc,
+)
+```
+
+### Use Structured Input and Output
+
+Define clear schemas for tool parameters:
+
+```go Go
+type SearchInput struct {
+    Query    string   `json:"query" jsonschema:"description=The search query"`
+    Category string   `json:"category,omitempty" jsonschema:"enum=electronics,enum=clothing,enum=books"`
+    MaxPrice float64  `json:"maxPrice,omitempty" jsonschema:"description=Maximum price filter"`
+}
+```
+
+### Handle Errors Gracefully
+
+Return meaningful error messages:
+
+```go Go
+func(ctx *ai.ToolContext, input SearchInput) (SearchResult, error) {
+    results, err := searchAPI(input.Query)
+    if err != nil {
+        return SearchResult{}, fmt.Errorf("search failed: %w", err)
+    }
+    return results, nil
+}
+```
+
+### Use Tool Interrupts for Sensitive Actions
+
+Always require human approval for:
+
+- Financial transactions
+- Data deletion
+- Sending emails or messages
+- Making purchases
+- Modifying important settings
+
+## Complete Example
+
+Here's a complete payment agent with tool interrupts:
+
+<CodeGroup>
+
+```go Go
+paymentAgent := genkit.DefineFlow(g, "paymentAgent", 
+    func(ctx context.Context, request string) (string, error) {
+        resp, err := genkit.Generate(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithSystem("You are a helpful payment assistant."),
+            ai.WithPrompt(request),
+            ai.WithTools(transferMoney),
+        )
+        if err != nil {
+            return "", err
+        }
+
+        // Handle interrupts
+        for resp.FinishReason == ai.FinishReasonInterrupted {
+            var restarts, responses []*ai.Part
+
+            for _, interrupt := range resp.Interrupts() {
+                meta, _ := ai.InterruptAs[TransferInterrupt](interrupt)
+
+                if meta.Reason == "confirm_large" {
+                    if getUserConfirmation() {
+                        part, _ := transferMoney.RestartWith(interrupt)
+                        restarts = append(restarts, part)
+                    } else {
+                        part, _ := transferMoney.RespondWith(interrupt,
+                            TransferOutput{"cancelled", "Cancelled by user", balance})
+                        responses = append(responses, part)
+                    }
+                }
+            }
+
+            resp, err = genkit.Generate(ctx, g,
+                ai.WithMessages(resp.History()...),
+                ai.WithTools(transferMoney),
+                ai.WithToolRestarts(restarts...),
+                ai.WithToolResponses(responses...),
+            )
+        }
+
+        return resp.Text(), nil
+    })
+```
+
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [RAG](/guides/rag) for knowledge retrieval
+- Explore [Chat Interfaces](/guides/chat-interfaces) for conversational AI
+- Check out [Evaluation](/guides/evaluation) for testing tool usage

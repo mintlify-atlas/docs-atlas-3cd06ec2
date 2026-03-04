@@ -1,0 +1,233 @@
+---
+title: JavaScript/TypeScript Quickstart
+description: Build your first AI application with Genkit in JavaScript or TypeScript
+---
+
+This guide will help you create your first AI-powered application using Genkit for JavaScript/TypeScript. You'll learn how to initialize Genkit, make your first generation request, and run it with the Developer UI.
+
+## Prerequisites
+
+- Node.js 18 or later
+- npm, yarn, or pnpm
+- A Google AI API key (get one at [Google AI Studio](https://aistudio.google.com/apikey))
+
+## Step 1: Install Dependencies
+
+Create a new project and install Genkit:
+
+<CodeGroup>
+```bash npm
+npm init -y
+npm install genkit @genkit-ai/google-genai
+npm install -g genkit-cli
+```
+
+```bash yarn
+yarn init -y
+yarn add genkit @genkit-ai/google-genai
+npm install -g genkit-cli
+```
+
+```bash pnpm
+pnpm init
+pnpm add genkit @genkit-ai/google-genai
+npm install -g genkit-cli
+```
+</CodeGroup>
+
+## Step 2: Set Your API Key
+
+Set your Google AI API key as an environment variable:
+
+```bash
+export GOOGLE_GENAI_API_KEY="your-api-key-here"
+```
+
+<Tip>
+You can also create a `.env` file in your project root:
+```
+GOOGLE_GENAI_API_KEY=your-api-key-here
+```
+</Tip>
+
+## Step 3: Create Your First Application
+
+Create a file named `index.ts` (or `index.js` for JavaScript):
+
+```typescript index.ts
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const { text } = await ai.generate({
+    model: googleAI.model('gemini-2.0-flash'),
+    prompt: 'Why is Firebase awesome?'
+});
+
+console.log(text);
+```
+
+<Note>
+If you're using JavaScript instead of TypeScript, you'll need to use ES modules. Add `"type": "module"` to your `package.json`.
+</Note>
+
+## Step 4: Run Your Application
+
+Run your application with the Genkit CLI to get automatic tracing and access to the Developer UI:
+
+```bash
+genkit start -- npx tsx index.ts
+```
+
+For JavaScript:
+
+```bash
+genkit start -- node index.js
+```
+
+You should see output similar to:
+
+```
+Firebase is awesome because it provides a comprehensive suite of tools...
+
+🔥 Genkit Developer UI: http://localhost:4000
+```
+
+## Step 5: Explore the Developer UI
+
+Open http://localhost:4000 in your browser to access the Genkit Developer UI. Here you can:
+
+- View execution traces of your AI requests
+- Test different prompts interactively
+- Compare outputs from different models
+- Debug multi-step flows
+
+## What's Next?
+
+### Add Streaming
+
+Stream responses for better user experience:
+
+```typescript
+const { stream } = await ai.generateStream({
+    model: googleAI.model('gemini-2.0-flash'),
+    prompt: 'Write a short story about AI'
+});
+
+for await (const chunk of stream) {
+    process.stdout.write(chunk.text);
+}
+```
+
+### Generate Structured Output
+
+Get type-safe JSON responses:
+
+```typescript
+import { z } from 'zod';
+
+const recipeSchema = z.object({
+    title: z.string(),
+    ingredients: z.array(z.string()),
+    steps: z.array(z.string())
+});
+
+const { output } = await ai.generate({
+    model: googleAI.model('gemini-2.0-flash'),
+    prompt: 'Create a recipe for chocolate chip cookies',
+    output: { schema: recipeSchema }
+});
+
+console.log(output); // Type-safe recipe object
+```
+
+### Create a Flow
+
+Flows are functions that encapsulate AI logic with automatic tracing:
+
+```typescript
+const jokeFlow = ai.defineFlow(
+    {
+        name: 'tellJoke',
+        inputSchema: z.string(),
+        outputSchema: z.string()
+    },
+    async (topic) => {
+        const { text } = await ai.generate({
+            model: googleAI.model('gemini-2.0-flash'),
+            prompt: `Tell me a joke about ${topic}`
+        });
+        return text;
+    }
+);
+
+// Run the flow
+const joke = await jokeFlow('programming');
+console.log(joke);
+```
+
+### Add Tool Calling
+
+Give your AI the ability to call functions:
+
+```typescript
+const weatherTool = ai.defineTool(
+    {
+        name: 'getWeather',
+        description: 'Gets the current weather for a location',
+        inputSchema: z.object({ location: z.string() }),
+        outputSchema: z.string()
+    },
+    async ({ location }) => {
+        // In a real app, call a weather API
+        return `The weather in ${location} is sunny and 72°F`;
+    }
+);
+
+const { text } = await ai.generate({
+    model: googleAI.model('gemini-2.0-flash'),
+    prompt: "What's the weather in San Francisco?",
+    tools: [weatherTool]
+});
+
+console.log(text);
+```
+
+## Try Other Model Providers
+
+Genkit supports multiple AI providers:
+
+```typescript
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+    plugins: [
+        googleAI(),
+        anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    ]
+});
+
+// Use Claude
+const { text } = await ai.generate({
+    model: anthropic.model('claude-3-5-sonnet-20241022'),
+    prompt: 'Hello, Claude!'
+});
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Text Generation" icon="wand-magic-sparkles" href="/guides/text-generation">
+    Learn about different generation options
+  </Card>
+  <Card title="Structured Output" icon="code" href="/guides/structured-output">
+    Generate type-safe JSON responses
+  </Card>
+  <Card title="Tool Calling" icon="wrench" href="/guides/tool-calling">
+    Give AI models access to functions
+  </Card>
+  <Card title="Developer Tools" icon="terminal" href="/devtools/developer-ui">
+    Explore the Developer UI features
+  </Card>
+</CardGroup>

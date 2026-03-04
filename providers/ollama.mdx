@@ -1,0 +1,597 @@
+---
+title: Ollama Provider
+description: Run open-source AI models locally with Ollama
+---
+
+The Ollama provider enables you to run open-source models locally on your machine. This gives you complete privacy, offline capabilities, and no API costs. Perfect for development, experimentation, and applications that require data privacy.
+
+## Installation
+
+### 1. Install Ollama
+
+First, install Ollama on your system:
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows:**
+Download from [ollama.com](https://ollama.com/download)
+
+**Docker:**
+```bash
+docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
+
+### 2. Install Genkit Plugin
+
+```bash
+npm install genkitx-ollama
+```
+
+### 3. Pull Models
+
+Download models you want to use:
+
+```bash
+# Pull Llama 3
+ollama pull llama3
+
+# Pull Mistral
+ollama pull mistral
+
+# Pull Gemma
+ollama pull gemma
+
+# Pull Phi-3
+ollama pull phi3
+
+# View available models
+ollama list
+```
+
+## Setup
+
+### Basic Configuration
+
+```typescript
+import { genkit } from 'genkit';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      models: [
+        { name: 'llama3' },
+        { name: 'mistral' },
+        { name: 'gemma' },
+      ],
+      serverAddress: 'http://127.0.0.1:11434', // Default
+    }),
+  ],
+});
+```
+
+### Remote Ollama Server
+
+Connect to Ollama running on a different machine:
+
+```typescript
+ollama({
+  models: [{ name: 'llama3' }],
+  serverAddress: 'http://192.168.1.100:11434',
+})
+```
+
+### With Custom Headers
+
+Add authentication or other headers:
+
+```typescript
+ollama({
+  models: [{ name: 'llama3' }],
+  requestHeaders: {
+    'Authorization': 'Bearer token',
+    'Custom-Header': 'value',
+  },
+})
+```
+
+### Dynamic Headers
+
+Use a function for request-time headers:
+
+```typescript
+ollama({
+  models: [{ name: 'llama3' }],
+  requestHeaders: async (context, input) => {
+    return {
+      'X-Request-ID': generateRequestId(),
+    };
+  },
+})
+```
+
+## Available Models
+
+Ollama supports many open-source models:
+
+### Text Generation
+
+**Llama 3** (Meta):
+- `llama3` - 8B parameter model, fast and capable
+- `llama3:70b` - 70B parameter, more powerful
+
+**Mistral**:
+- `mistral` - 7B, excellent performance
+- `mistral-nemo` - 12B, enhanced capabilities
+
+**Gemma** (Google):
+- `gemma` - 2B/7B, efficient models
+- `gemma2` - 9B/27B, improved versions
+
+**Phi-3** (Microsoft):
+- `phi3` - 3.8B, small but powerful
+- `phi3:medium` - 14B parameters
+
+**Qwen**:
+- `qwen2` - Multiple sizes available
+
+**DeepSeek**:
+- `deepseek-r1` - Reasoning model
+
+### Code Generation
+
+- `codellama` - Code-specialized Llama
+- `starcoder2` - Code generation
+- `codegemma` - Google's code model
+
+### Embeddings
+
+- `nomic-embed-text` - High-quality embeddings
+- `mxbai-embed-large` - Large embedding model
+- `all-minilm` - Lightweight embeddings
+
+### Vision Models
+
+- `llava` - Llama + vision
+- `bakllava` - Alternative vision model
+
+See the full list at [ollama.com/library](https://ollama.com/library)
+
+## Usage Examples
+
+### Basic Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      models: [{ name: 'llama3' }],
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: ollama.model('llama3'),
+  prompt: 'Explain how neural networks work.',
+});
+
+console.log(response.text());
+```
+
+### Using Model References
+
+```typescript
+const response = await ai.generate({
+  model: 'ollama/llama3',
+  prompt: 'Hello!',
+});
+```
+
+### Streaming Responses
+
+```typescript
+const { response, stream } = await ai.generateStream({
+  model: ollama.model('mistral'),
+  prompt: 'Write a short story about a robot.',
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text());
+}
+```
+
+### Function Calling
+
+```typescript
+import { z } from 'genkit';
+
+const getWeather = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Get current weather for a location',
+    inputSchema: z.object({
+      location: z.string(),
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ location }) => {
+    return `Sunny, 72°F in ${location}`;
+  }
+);
+
+const response = await ai.generate({
+  model: ollama.model('llama3'),
+  tools: [getWeather],
+  prompt: 'What\'s the weather in Boston?',
+});
+
+console.log(response.text());
+```
+
+<Note>
+Tool calling is only supported on models configured with `type: 'chat'` (the default). Not all Ollama models support tools - test with your specific model.
+</Note>
+
+### Multimodal (Vision)
+
+```typescript
+const response = await ai.generate({
+  model: ollama.model('llava'),
+  prompt: [
+    { text: 'What is in this image?' },
+    { media: { url: 'path/to/image.jpg' } },
+  ],
+});
+
+console.log(response.text());
+```
+
+### Text Embeddings
+
+```typescript
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      embedders: [
+        { name: 'nomic-embed-text', dimensions: 768 },
+      ],
+    }),
+  ],
+});
+
+const embedding = await ai.embed({
+  embedder: ollama.embedder('nomic-embed-text'),
+  content: 'Genkit makes AI development easy',
+});
+
+console.log(embedding); // 768-dimensional vector
+```
+
+<Note>
+For embedders, you must specify the `dimensions` in the plugin configuration.
+</Note>
+
+### Using Different Model Sizes
+
+```typescript
+// Use a specific model variant
+const response = await ai.generate({
+  model: 'ollama/llama3:70b',
+  prompt: 'Complex reasoning task...',
+});
+```
+
+### Using in a Flow
+
+```typescript
+import { z } from 'genkit';
+
+export const summarizeFlow = ai.defineFlow(
+  {
+    name: 'summarize',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (text) => {
+    const response = await ai.generate({
+      model: ollama.model('mistral'),
+      prompt: `Summarize this text:\n\n${text}`,
+    });
+    return response.text();
+  }
+);
+```
+
+## Configuration Options
+
+### Model Configuration
+
+```typescript
+const response = await ai.generate({
+  model: ollama.model('llama3'),
+  prompt: 'Be creative',
+  config: {
+    temperature: 0.8,      // Randomness (0.0 - 1.0)
+    topP: 0.9,              // Nucleus sampling
+    topK: 40,               // Top-k sampling
+    maxOutputTokens: 2048,  // Max response length
+    stopSequences: ['END'], // Stop triggers
+  },
+});
+```
+
+### Model Types
+
+Ollama supports two API types:
+
+```typescript
+ollama({
+  models: [
+    { name: 'llama3', type: 'chat' },      // Multi-turn chat (default)
+    { name: 'mistral', type: 'generate' }, // Single completion
+  ],
+})
+```
+
+**Chat API** (default):
+- Multi-turn conversations
+- Function calling support
+- System messages
+
+**Generate API**:
+- Simple text completion
+- No conversation history
+- No tool support
+
+### Model Capabilities
+
+Specify what features a model supports:
+
+```typescript
+ollama({
+  models: [
+    {
+      name: 'custom-model',
+      supports: {
+        tools: true,  // Function calling
+      },
+    },
+  ],
+})
+```
+
+## Managing Models
+
+### Pull Models
+
+```bash
+# Pull latest version
+ollama pull llama3
+
+# Pull specific version
+ollama pull llama3:8b
+
+# Pull with tag
+ollama pull llama3:latest
+```
+
+### List Models
+
+```bash
+ollama list
+```
+
+### Remove Models
+
+```bash
+ollama rm llama3
+```
+
+### Show Model Info
+
+```bash
+ollama show llama3
+```
+
+### Create Custom Models
+
+Create a `Modelfile`:
+
+```modelfile
+FROM llama3
+
+SYSTEM You are a helpful coding assistant.
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+```
+
+Then create the model:
+
+```bash
+ollama create my-code-assistant -f Modelfile
+```
+
+Use in Genkit:
+
+```typescript
+ollama({
+  models: [{ name: 'my-code-assistant' }],
+})
+```
+
+## Performance Optimization
+
+### GPU Acceleration
+
+Ollama automatically uses GPU if available:
+- **NVIDIA GPUs**: CUDA
+- **AMD GPUs**: ROCm
+- **Apple Silicon**: Metal
+
+### Model Quantization
+
+Use quantized models for faster inference:
+
+```bash
+# 4-bit quantization (smaller, faster)
+ollama pull llama3:8b-q4_0
+
+# 8-bit quantization (balanced)
+ollama pull llama3:8b-q8_0
+```
+
+### Concurrent Requests
+
+Ollama handles multiple requests efficiently:
+
+```typescript
+const [response1, response2] = await Promise.all([
+  ai.generate({ model: ollama.model('llama3'), prompt: 'Task 1' }),
+  ai.generate({ model: ollama.model('llama3'), prompt: 'Task 2' }),
+]);
+```
+
+## System Requirements
+
+### Minimum Requirements
+
+- **RAM**: 8GB (for 7B models)
+- **Disk**: 5GB per model
+- **CPU**: Modern multi-core processor
+
+### Recommended for Larger Models
+
+- **RAM**: 16GB+ (for 13B+ models)
+- **RAM**: 32GB+ (for 70B models)
+- **GPU**: 8GB+ VRAM for acceleration
+
+### Model Size Guide
+
+| Model Size | RAM Required | Speed | Quality |
+|------------|--------------|-------|----------|
+| 2B - 3B    | 4GB         | Very Fast | Good |
+| 7B - 8B    | 8GB         | Fast | Very Good |
+| 13B - 14B  | 16GB        | Medium | Excellent |
+| 30B - 70B  | 32GB+       | Slow | Outstanding |
+
+## Troubleshooting
+
+### Ollama Server Not Running
+
+```
+Error: Make sure the Ollama server is running
+```
+
+**Solution:**
+
+```bash
+# Start Ollama
+ollama serve
+
+# Or check if it's running
+curl http://localhost:11434
+```
+
+### Model Not Found
+
+```
+Error: model 'llama3' not found
+```
+
+**Solution:**
+
+```bash
+ollama pull llama3
+```
+
+### Out of Memory
+
+```
+Error: failed to allocate memory
+```
+
+**Solution:**
+- Use a smaller model (e.g., `llama3:7b` instead of `llama3:70b`)
+- Use quantized version (e.g., `llama3:8b-q4_0`)
+- Close other applications
+- Increase system swap/virtual memory
+
+### Slow Performance
+
+**Solutions:**
+- Use GPU acceleration
+- Use quantized models
+- Use smaller models
+- Reduce `maxOutputTokens`
+- Increase system resources
+
+### Connection Refused
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:11434
+```
+
+**Solution:**
+
+```bash
+# Check Ollama is running
+ollama list
+
+# Restart Ollama
+ollama serve
+```
+
+## Best Practices
+
+1. **Start with smaller models** - `llama3:8b` is a good default
+2. **Use quantized models** for production to balance speed and quality
+3. **Monitor system resources** - watch RAM and GPU usage
+4. **Keep models updated** - `ollama pull <model>` regularly
+5. **Use appropriate model sizes** for your hardware
+6. **Enable GPU acceleration** if available
+7. **Cache frequently-used models** in memory
+8. **Test locally** before deploying
+
+## Privacy Benefits
+
+**Complete Data Privacy:**
+- All processing happens locally
+- No data sent to external APIs
+- No internet required (after model download)
+- Full control over model versions
+
+**Ideal For:**
+- Healthcare applications (HIPAA compliance)
+- Financial services
+- Legal document processing
+- Internal corporate tools
+- Sensitive data analysis
+
+## Comparison: Ollama vs Cloud Providers
+
+| Aspect | Ollama | Cloud APIs |
+|--------|--------|------------|
+| **Privacy** | Complete | Limited |
+| **Cost** | Free (after hardware) | Pay-per-use |
+| **Internet** | Not required | Required |
+| **Setup** | Moderate | Simple |
+| **Performance** | Depends on hardware | Consistent |
+| **Model Access** | Open-source only | Proprietary + open |
+| **Latency** | Very low (local) | Network dependent |
+| **Scale** | Single machine | Unlimited |
+
+## Next Steps
+
+- [Ollama Documentation](https://github.com/ollama/ollama)
+- [Ollama Model Library](https://ollama.com/library)
+- [Building Flows](/concepts/flows)
+- [Local RAG Systems](/guides/rag)

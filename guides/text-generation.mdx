@@ -1,0 +1,306 @@
+---
+title: Text Generation
+description: Generate text with AI models using Genkit's unified interface
+---
+
+# Text Generation
+
+Genkit provides a simple, unified interface for generating text across all supported AI models. Use the `generate()` or `generateText()` functions to create AI-powered content.
+
+## Basic Usage
+
+Generate text with a simple prompt:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Why is Firebase awesome?'
+});
+
+console.log(text);
+```
+
+```go Go
+package main
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+func main() {
+    ctx := context.Background()
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    answer, err := genkit.GenerateText(ctx, g,
+        ai.WithModelName("googleai/gemini-2.5-flash"),
+        ai.WithPrompt("Why is Go a great language for AI applications?"),
+    )
+    if err != nil {
+        fmt.Println("could not generate: %s", err)
+    }
+    fmt.Println(answer)
+}
+```
+
+```python Python
+from genkit.ai import Genkit
+from genkit.plugins.google_genai import VertexAI
+
+ai = Genkit(
+    plugins=[VertexAI()],
+    model='vertexai/gemini-3-flash-preview',
+)
+
+response = await ai.generate('Tell me about Python for AI')
+print(response.text)
+```
+
+</CodeGroup>
+
+## Configuration Options
+
+### Basic Configuration
+
+Control generation behavior with configuration options:
+
+<CodeGroup>
+
+```typescript TypeScript
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Explain quantum computing',
+  config: {
+    temperature: 0.7,
+    maxOutputTokens: 1000,
+    topP: 0.9,
+  }
+});
+```
+
+```go Go
+import "google.golang.org/genai"
+
+response, _ := genkit.Generate(ctx, g,
+    ai.WithModel(googlegenai.ModelRef("googleai/gemini-2.5-flash", &genai.GenerateContentConfig{
+        Temperature:     genai.Ptr(float32(0.7)),
+        MaxOutputTokens: genai.Ptr(int32(1000)),
+        TopP:            genai.Ptr(float32(0.9)),
+    })),
+    ai.WithPrompt("Explain quantum computing"),
+)
+```
+
+</CodeGroup>
+
+### System Messages
+
+Set the AI's behavior and personality with system messages:
+
+<CodeGroup>
+
+```typescript TypeScript
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  system: 'You are a helpful chef assistant. Keep answers concise.',
+  prompt: 'How do I make pasta carbonara?'
+});
+```
+
+```go Go
+response, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithSystem("You are an experienced chef. Come up with easy, creative recipes."),
+    ai.WithPrompt("How do I make pasta carbonara?"),
+)
+```
+
+</CodeGroup>
+
+## Multi-Turn Conversations
+
+Build conversations by passing message history:
+
+<CodeGroup>
+
+```typescript TypeScript
+const messages = [
+  { role: 'user', content: [{ text: 'What is the capital of France?' }] },
+  { role: 'model', content: [{ text: 'The capital of France is Paris.' }] },
+  { role: 'user', content: [{ text: 'What is its population?' }] }
+];
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  messages
+});
+```
+
+```go Go
+systemMsg := ai.NewSystemTextMessage(
+    "You are a helpful assistant that answers questions.")
+
+userMsg1 := ai.NewUserTextMessage("What is the capital of France?")
+modelMsg1 := ai.NewModelTextMessage("The capital of France is Paris.")
+userMsg2 := ai.NewUserTextMessage("What is its population?")
+
+resp, _ := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithMessages(systemMsg, userMsg1, modelMsg1, userMsg2),
+)
+```
+
+</CodeGroup>
+
+## Using Flows
+
+Wrap your generation logic in flows for better observability and deployment:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { z } from 'genkit';
+
+const jokeFlow = ai.defineFlow(
+  {
+    name: 'tellJoke',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (topic) => {
+    const { text } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Tell me a joke about ${topic}`
+    });
+    return text;
+  }
+);
+
+const joke = await jokeFlow('programming');
+```
+
+```go Go
+jokeFlow := genkit.DefineFlow(g, "tellJoke",
+    func(ctx context.Context, topic string) (string, error) {
+        return genkit.GenerateText(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Tell me a joke about %s", topic),
+        )
+    },
+)
+
+joke, _ := jokeFlow.Run(ctx, "programming")
+fmt.Println(joke)
+```
+
+</CodeGroup>
+
+## Model Providers
+
+Genkit supports multiple AI providers with a unified interface:
+
+### Google AI (Gemini)
+
+<CodeGroup>
+
+```typescript TypeScript
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Hello!'
+});
+```
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/googlegenai"
+
+g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+text, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Hello!"),
+)
+```
+
+</CodeGroup>
+
+### Anthropic (Claude)
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/anthropic"
+
+g := genkit.Init(ctx, genkit.WithPlugins(&anthropic.Anthropic{}))
+
+text, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("anthropic/claude-3-5-sonnet"),
+    ai.WithPrompt("Hello!"),
+)
+```
+
+</CodeGroup>
+
+### Ollama (Local Models)
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/ollama"
+
+g := genkit.Init(ctx, genkit.WithPlugins(&ollama.Ollama{
+    ServerAddress: "http://localhost:11434",
+}))
+
+text, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("ollama/llama3.1"),
+    ai.WithPrompt("Hello!"),
+)
+```
+
+</CodeGroup>
+
+### Multiple Providers
+
+<CodeGroup>
+
+```go Go
+g := genkit.Init(ctx, genkit.WithPlugins(
+    &googlegenai.GoogleAI{},
+    &anthropic.Anthropic{},
+))
+
+// Use Gemini
+geminiText, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Hello!"),
+)
+
+// Use Claude
+claudeText, _ := genkit.GenerateText(ctx, g,
+    ai.WithModelName("anthropic/claude-3-5-sonnet"),
+    ai.WithPrompt("Hello!"),
+)
+```
+
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [Structured Output](/guides/structured-output) for type-safe JSON generation
+- Explore [Streaming](/guides/streaming) for real-time responses
+- Discover [Tool Calling](/guides/tool-calling) to give models capabilities

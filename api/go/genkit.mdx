@@ -1,0 +1,561 @@
+---
+title: Genkit Package
+description: Main Genkit package API reference (Go)
+---
+
+The `genkit` package provides the core functionality for building AI applications in Go.
+
+## Init()
+
+Creates and initializes a new Genkit instance.
+
+```go
+import (
+    "context"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+ctx := context.Background()
+g := genkit.Init(ctx,
+    genkit.WithPlugins(&googlegenai.GoogleAI{}),
+    genkit.WithDefaultModel("googleai/gemini-2.0-flash"),
+    genkit.WithPromptDir("./prompts"),
+)
+```
+
+### Parameters
+
+<ParamField path="ctx" type="context.Context" required>
+  Context for initialization (should handle shutdown signals)
+</ParamField>
+
+<ParamField path="opts" type="...GenkitOption">
+  Configuration options
+  
+  Available options:
+  - `WithPlugins(...Plugin)` - Initialize plugins
+  - `WithDefaultModel(string)` - Set default model
+  - `WithPromptDir(string)` - Set prompts directory
+  - `WithPromptFS(fs.FS)` - Use embedded prompt filesystem
+</ParamField>
+
+### Returns
+
+<ResponseField name="*Genkit" type="*Genkit">
+  Initialized Genkit instance
+</ResponseField>
+
+## Generate()
+
+Performs a model generation request.
+
+```go
+resp, err := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.0-flash"),
+    ai.WithPrompt("Write a short poem about clouds."),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(resp.Text())
+```
+
+### Parameters
+
+<ParamField path="ctx" type="context.Context" required>
+  Context for the request
+</ParamField>
+
+<ParamField path="g" type="*Genkit" required>
+  Genkit instance
+</ParamField>
+
+<ParamField path="opts" type="...GenerateOption">
+  Generation options (see [ai package](/api/go/ai#generateoption))
+  
+  Common options:
+  - `ai.WithModelName(string)`
+  - `ai.WithModel(Model)`
+  - `ai.WithPrompt(string)`
+  - `ai.WithSystem(string)`
+  - `ai.WithMessages([]*Message)`
+  - `ai.WithTools(...Tool)`
+  - `ai.WithConfig(any)`
+  - `ai.WithOutputType(T)`
+  - `ai.WithOutputSchema(map[string]any)`
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="*ModelResponse">
+  The model's response
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Error if generation failed
+</ResponseField>
+
+## GenerateText()
+
+Generates text and returns it as a string.
+
+```go
+text, err := genkit.GenerateText(ctx, g,
+    ai.WithPrompt("Tell me a joke."),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(text)
+```
+
+### Parameters
+
+Same as `Generate()`.
+
+### Returns
+
+<ResponseField name="text" type="string">
+  Generated text
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Error if generation failed
+</ResponseField>
+
+## GenerateData()
+
+Generates structured data matching a Go type.
+
+```go
+type BookInfo struct {
+    Title  string `json:"title"`
+    Author string `json:"author"`
+    Year   int    `json:"year"`
+}
+
+book, resp, err := genkit.GenerateData[BookInfo](ctx, g,
+    ai.WithPrompt("Tell me about '1984' by George Orwell."),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Book: %+v\n", book)
+```
+
+### Type Parameters
+
+<ParamField path="Out" type="any" required>
+  Output type (struct with JSON tags)
+</ParamField>
+
+### Parameters
+
+Same as `Generate()`.
+
+### Returns
+
+<ResponseField name="output" type="*Out">
+  Typed output data
+</ResponseField>
+
+<ResponseField name="response" type="*ModelResponse">
+  Full model response
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Error if generation failed
+</ResponseField>
+
+## GenerateStream()
+
+Generates a response with streaming.
+
+```go
+for result, err := range genkit.GenerateStream(ctx, g,
+    ai.WithPrompt("Tell me a story."),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if result.Done {
+        fmt.Println("\nFinal:", result.Response.Text())
+    } else {
+        fmt.Print(result.Chunk.Text())
+    }
+}
+```
+
+### Returns
+
+<ResponseField name="iterator" type="iter.Seq2[*ModelStreamValue, error]">
+  Iterator yielding stream values and errors
+  
+  **ModelStreamValue fields:**
+  - `Done bool` - True when streaming is complete
+  - `Response *ModelResponse` - Final response (when Done)
+  - `Chunk *ModelResponseChunk` - Streaming chunk (when !Done)
+</ResponseField>
+
+## GenerateDataStream()
+
+Generates structured data with streaming.
+
+```go
+type Story struct {
+    Title   string `json:"title"`
+    Content string `json:"content"`
+}
+
+for result, err := range genkit.GenerateDataStream[Story](ctx, g,
+    ai.WithPrompt("Write a short story."),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if result.Done {
+        fmt.Printf("Story: %+v\n", result.Output)
+    } else {
+        fmt.Print(result.Chunk.Text())
+    }
+}
+```
+
+## DefineFlow()
+
+Defines and registers a flow.
+
+```go
+myFlow := genkit.DefineFlow(g, "myFlow",
+    func(ctx context.Context, input string) (string, error) {
+        resp, err := genkit.Generate(ctx, g,
+            ai.WithPrompt("Respond to: " + input),
+        )
+        if err != nil {
+            return "", err
+        }
+        return resp.Text(), nil
+    },
+)
+
+// Run the flow
+result, err := myFlow.Run(ctx, "Hello!")
+```
+
+### Type Parameters
+
+<ParamField path="In" type="any" required>
+  Input type
+</ParamField>
+
+<ParamField path="Out" type="any" required>
+  Output type
+</ParamField>
+
+### Parameters
+
+<ParamField path="g" type="*Genkit" required>
+  Genkit instance
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Flow name
+</ParamField>
+
+<ParamField path="fn" type="func(context.Context, In) (Out, error)" required>
+  Flow implementation
+</ParamField>
+
+### Returns
+
+<ResponseField name="flow" type="*Flow[In, Out, struct{}]">
+  Flow instance with Run() method
+</ResponseField>
+
+## DefineStreamingFlow()
+
+Defines a streaming flow.
+
+```go
+counterFlow := genkit.DefineStreamingFlow(g, "counter",
+    func(ctx context.Context, limit int, stream func(context.Context, int) error) (string, error) {
+        if stream == nil {
+            return fmt.Sprintf("Counted to %d", limit), nil
+        }
+        for i := 1; i <= limit; i++ {
+            if err := stream(ctx, i); err != nil {
+                return "", err
+            }
+        }
+        return fmt.Sprintf("Finished: %d", limit), nil
+    },
+)
+
+// Stream results
+for result := range counterFlow.Stream(ctx, 5) {
+    if result.Done {
+        fmt.Println("Done:", result.Output)
+    } else {
+        fmt.Println("Chunk:", result.Stream)
+    }
+}
+```
+
+### Type Parameters
+
+<ParamField path="In" type="any" required>
+  Input type
+</ParamField>
+
+<ParamField path="Out" type="any" required>
+  Final output type
+</ParamField>
+
+<ParamField path="Stream" type="any" required>
+  Streaming chunk type
+</ParamField>
+
+### Parameters
+
+<ParamField path="g" type="*Genkit" required>
+  Genkit instance
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Flow name
+</ParamField>
+
+<ParamField path="fn" type="StreamingFunc[In, Out, Stream]" required>
+  Implementation function
+  
+  **Signature:**
+  ```go
+  func(ctx context.Context, input In, stream func(context.Context, Stream) error) (Out, error)
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="flow" type="*Flow[In, Out, Stream]">
+  Streaming flow instance
+</ResponseField>
+
+## Run()
+
+Runs a step within a flow (for tracing).
+
+```go
+genkit.DefineFlow(g, "complexFlow",
+    func(ctx context.Context, input string) (string, error) {
+        // Traced step
+        processed, err := genkit.Run(ctx, "process-input", func() (string, error) {
+            return strings.ToUpper(input), nil
+        })
+        if err != nil {
+            return "", err
+        }
+        
+        // Another traced step
+        result, err := genkit.Run(ctx, "generate", func() (string, error) {
+            resp, err := genkit.Generate(ctx, g,
+                ai.WithPrompt("Respond to: " + processed),
+            )
+            if err != nil {
+                return "", err
+            }
+            return resp.Text(), nil
+        })
+        
+        return result, nil
+    },
+)
+```
+
+### Type Parameters
+
+<ParamField path="Out" type="any" required>
+  Return type
+</ParamField>
+
+### Parameters
+
+<ParamField path="ctx" type="context.Context" required>
+  Context (must be from within a flow)
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Step name (for tracing)
+</ParamField>
+
+<ParamField path="fn" type="func() (Out, error)" required>
+  Step implementation
+</ParamField>
+
+### Returns
+
+<ResponseField name="output" type="Out">
+  Step output
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Error if step failed
+</ResponseField>
+
+## DefineTool()
+
+Defines and registers a tool.
+
+```go
+weatherTool := genkit.DefineTool(g, "getWeather",
+    "Fetches weather for a city",
+    func(ctx *ai.ToolContext, city string) (string, error) {
+        // Tool implementation
+        return "Sunny, 25°C", nil
+    },
+)
+
+// Use in generation
+resp, err := genkit.Generate(ctx, g,
+    ai.WithPrompt("What's the weather in Paris?"),
+    ai.WithTools(weatherTool),
+)
+```
+
+See [ai.DefineTool](/api/go/ai#definetool) for full documentation.
+
+## DefinePrompt()
+
+Defines a prompt programmatically.
+
+```go
+type GeoInput struct {
+    Country string `json:"country"`
+}
+
+type GeoOutput struct {
+    Capital string `json:"capital"`
+}
+
+capitalPrompt := genkit.DefinePrompt(g, "findCapital",
+    ai.WithDescription("Finds country capitals"),
+    ai.WithModelName("googleai/gemini-2.0-flash"),
+    ai.WithPrompt("What is the capital of {{country}}?"),
+    ai.WithInputType(GeoInput{}),
+    ai.WithOutputType(GeoOutput{}),
+)
+
+// Execute
+resp, err := capitalPrompt.Execute(ctx,
+    ai.WithInput(GeoInput{Country: "France"}),
+)
+```
+
+See [Prompts API](/api/go/prompts) for full documentation.
+
+## LookupPrompt()
+
+Retrieves a prompt by name (from `.prompt` files or DefinePrompt).
+
+```go
+prompt := genkit.LookupPrompt(g, "jokePrompt")
+if prompt == nil {
+    log.Fatal("Prompt not found")
+}
+
+resp, err := prompt.Execute(ctx, nil)
+```
+
+## DefineModel()
+
+Defines a custom model.
+
+```go
+echoModel := genkit.DefineModel(g, "custom/echo",
+    &ai.ModelOptions{
+        Label: "Echo Model",
+    },
+    func(ctx context.Context, req *ai.ModelRequest, cb ai.ModelStreamCallback) (*ai.ModelResponse, error) {
+        // Model implementation
+        text := req.Messages[len(req.Messages)-1].Content[0].Text
+        
+        return &ai.ModelResponse{
+            Message: &ai.Message{
+                Role:    ai.RoleModel,
+                Content: []*ai.Part{ai.NewTextPart(text)},
+            },
+            FinishReason: ai.FinishReasonStop,
+        }, nil
+    },
+)
+```
+
+## LookupModel()
+
+Retrieves a registered model by name.
+
+```go
+model := genkit.LookupModel(g, "googleai/gemini-2.0-flash")
+if model == nil {
+    log.Fatal("Model not found")
+}
+```
+
+## Example: Complete Application
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    // Initialize Genkit
+    g := genkit.Init(ctx,
+        genkit.WithPlugins(&googlegenai.GoogleAI{}),
+        genkit.WithDefaultModel("googleai/gemini-2.0-flash"),
+    )
+    
+    // Define a tool
+    weatherTool := genkit.DefineTool(g, "getWeather",
+        "Gets current weather",
+        func(ctx *ai.ToolContext, city string) (string, error) {
+            return fmt.Sprintf("Weather in %s: Sunny, 25°C", city), nil
+        },
+    )
+    
+    // Define a flow
+    assistantFlow := genkit.DefineFlow(g, "assistant",
+        func(ctx context.Context, query string) (string, error) {
+            resp, err := genkit.Generate(ctx, g,
+                ai.WithPrompt(query),
+                ai.WithTools(weatherTool),
+            )
+            if err != nil {
+                return "", err
+            }
+            return resp.Text(), nil
+        },
+    )
+    
+    // Run the flow
+    result, err := assistantFlow.Run(ctx, "What's the weather in Paris?")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Println(result)
+}
+```

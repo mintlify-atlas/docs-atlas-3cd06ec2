@@ -1,0 +1,325 @@
+---
+title: Streaming
+description: Stream AI responses in real-time for responsive user experiences
+---
+
+# Streaming
+
+Streaming allows you to receive AI-generated content incrementally as it's produced, creating responsive user experiences without waiting for the complete response.
+
+## Basic Text Streaming
+
+Stream text as it's generated:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const { stream } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Write a short story about a robot learning to paint',
+  streamingCallback: (chunk) => {
+    process.stdout.write(chunk.text);
+  }
+});
+
+// Or iterate over chunks
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text);
+}
+```
+
+```go Go
+import (
+    "context"
+    "fmt"
+
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+stream := genkit.GenerateStream(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Write a short story about a robot learning to paint."),
+)
+
+for result, err := range stream {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if result.Done {
+        break
+    }
+    fmt.Print(result.Chunk.Text())
+}
+```
+
+</CodeGroup>
+
+## Streaming Flows
+
+Create flows that stream responses:
+
+<CodeGroup>
+
+```go Go
+genkit.DefineStreamingFlow(g, "streamStory",
+    func(ctx context.Context, topic string, send core.StreamCallback[string]) (string, error) {
+        stream := genkit.GenerateStream(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Write a story about %s", topic),
+        )
+
+        for result, err := range stream {
+            if err != nil {
+                return "", err
+            }
+            if result.Done {
+                return result.Response.Text(), nil
+            }
+            send(ctx, result.Chunk.Text())
+        }
+        return "", nil
+    },
+)
+```
+
+```typescript TypeScript
+import { z } from 'genkit';
+
+const storyFlow = ai.defineStreamingFlow(
+  {
+    name: 'streamStory',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (topic, { streamingCallback }) => {
+    const { text, stream } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Write a story about ${topic}`,
+      streamingCallback,
+    });
+    return text;
+  }
+);
+```
+
+</CodeGroup>
+
+## Streaming Structured Data
+
+Stream type-safe JSON objects as they're being generated:
+
+<CodeGroup>
+
+```go Go
+type Ingredient struct {
+    Name   string `json:"name"`
+    Amount string `json:"amount"`
+}
+
+type Recipe struct {
+    Title       string        `json:"title"`
+    Ingredients []*Ingredient `json:"ingredients"`
+}
+
+stream := genkit.GenerateDataStream[*Recipe](ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Create a recipe for spaghetti carbonara."),
+)
+
+for result, err := range stream {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if result.Done {
+        fmt.Printf("\nComplete recipe: %s\n", result.Output.Title)
+        break
+    }
+    // Access partial data as it streams in
+    if result.Chunk != nil && len(result.Chunk.Ingredients) > 0 {
+        fmt.Printf("Found ingredient: %s\n", result.Chunk.Ingredients[0].Name)
+    }
+}
+```
+
+```typescript TypeScript
+const RecipeSchema = z.object({
+  title: z.string(),
+  ingredients: z.array(z.object({
+    name: z.string(),
+    amount: z.string(),
+  })),
+});
+
+const { stream } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Create a recipe for spaghetti carbonara',
+  output: { schema: RecipeSchema },
+  streamingCallback: (chunk) => {
+    if (chunk.output?.ingredients?.length) {
+      console.log('Found ingredient:', chunk.output.ingredients[0].name);
+    }
+  }
+});
+```
+
+</CodeGroup>
+
+## Streaming Flow with Structured Output
+
+<CodeGroup>
+
+```go Go
+genkit.DefineStreamingFlow(g, "structuredJokesFlow",
+    func(ctx context.Context, input JokeRequest, sendChunk core.StreamCallback[*Joke]) (*Joke, error) {
+        stream := genkit.GenerateDataStream[*Joke](ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Share a long joke about %s.", input.Topic),
+        )
+
+        for result, err := range stream {
+            if err != nil {
+                return nil, fmt.Errorf("could not generate joke: %w", err)
+            }
+            if result.Done {
+                return result.Output, nil
+            }
+            sendChunk(ctx, result.Chunk)
+        }
+
+        return nil, nil
+    })
+```
+
+</CodeGroup>
+
+## Server-Sent Events (SSE)
+
+When serving flows over HTTP, Genkit automatically streams responses using Server-Sent Events:
+
+<CodeGroup>
+
+```go Go
+import "net/http"
+
+mux := http.NewServeMux()
+for _, flow := range genkit.ListFlows(g) {
+    mux.HandleFunc("POST /"+flow.Name(), genkit.Handler(flow))
+}
+log.Fatal(http.ListenAndServe(":8080", mux))
+```
+
+```bash cURL
+# The -N flag enables streaming
+curl -N -X POST http://localhost:8080/streamingJokesFlow \
+  -H "Content-Type: application/json" \
+  -d '{"data": "bananas"}'
+```
+
+</CodeGroup>
+
+The response streams as Server-Sent Events:
+
+```
+data: {"message":"Once upon"}
+
+data: {"message":" a time"}
+
+data: {"message":" there was"}
+```
+
+## Passthrough Streaming
+
+Pass streaming chunks directly from the model to the client:
+
+<CodeGroup>
+
+```go Go
+genkit.DefineStreamingFlow(g, "streamingJokesFlow",
+    func(ctx context.Context, input string, sendChunk ai.ModelStreamCallback) (string, error) {
+        if input == "" {
+            input = "airplane food"
+        }
+
+        resp, err := genkit.Generate(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Share a joke about %s.", input),
+            ai.WithStreaming(sendChunk),
+        )
+        if err != nil {
+            return "", fmt.Errorf("could not generate joke: %w", err)
+        }
+
+        return resp.Text(), nil
+    },
+)
+```
+
+</CodeGroup>
+
+## Durable Streaming (Experimental)
+
+Allow clients to reconnect to in-progress or completed streams:
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/core/x/streaming"
+
+mux.HandleFunc("POST /myFlow", genkit.Handler(myStreamingFlow,
+    genkit.WithStreamManager(streaming.NewInMemoryStreamManager(
+        streaming.WithTTL(10*time.Minute),
+    )),
+))
+```
+
+</CodeGroup>
+
+Clients receive a stream ID in the `X-Genkit-Stream-Id` header and can reconnect to replay buffered chunks.
+
+See the [durable-streaming sample](https://github.com/firebase/genkit/tree/main/go/samples/durable-streaming) for a complete example.
+
+## Best Practices
+
+### Use Streaming for Long Responses
+
+Stream responses when generating long-form content to improve perceived performance:
+
+- Stories, articles, or essays
+- Detailed explanations
+- Code generation
+- Multi-paragraph summaries
+
+### Handle Errors Gracefully
+
+Always check for errors in streaming loops:
+
+```go Go
+for result, err := range stream {
+    if err != nil {
+        log.Printf("Stream error: %v", err)
+        return "", err
+    }
+    // Process chunk
+}
+```
+
+### Consider Network Conditions
+
+Streaming works best with stable connections. For unreliable networks, consider:
+
+- Using durable streaming with reconnection support
+- Buffering chunks before sending to the client
+- Falling back to non-streaming for small responses
+
+## Next Steps
+
+- Learn about [Tool Calling](/guides/tool-calling) for interactive workflows
+- Explore [Chat Interfaces](/guides/chat-interfaces) for conversational apps
+- Check out [Flows](/concepts/flows) for deployment patterns

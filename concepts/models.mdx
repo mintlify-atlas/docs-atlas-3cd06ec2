@@ -1,0 +1,429 @@
+---
+title: Models
+description: Unified API for working with AI models from any provider
+---
+
+Genkit provides a unified API for working with AI models from different providers. Whether you're using Gemini, Claude, GPT, Llama, or any other model, the interface is the same.
+
+## Model Abstraction
+
+Genkit abstracts away provider-specific APIs into a single, consistent interface:
+
+```typescript
+// Same API works for any model
+const response = await ai.generate({
+  model: 'googleai/gemini-2.0-flash',  // or anthropic/claude-3-5-sonnet
+  prompt: 'Explain quantum computing',
+});
+```
+
+This abstraction means:
+- **Switch providers easily**: Change one line to try different models
+- **Multi-model workflows**: Use different models for different tasks
+- **Consistent error handling**: Same error types across providers
+- **Unified tracing**: All model calls appear the same in traces
+
+## Model References
+
+Models are referenced by a **namespace/name** format:
+
+```
+[plugin-namespace]/[model-name]
+```
+
+Examples:
+- `googleai/gemini-2.0-flash`
+- `anthropic/claude-3-5-sonnet`
+- `ollama/llama2`
+- `vertexai/gemini-1.5-pro`
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+  plugins: [googleAI(), anthropic()],
+});
+
+// Use Gemini
+const geminiResponse = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Write a haiku',
+});
+
+// Use Claude
+const claudeResponse = await ai.generate({
+  model: anthropic.model('claude-3-5-sonnet'),
+  prompt: 'Write a haiku',
+});
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from genkit.plugins.anthropic import Anthropic, claude_3_5_sonnet
+
+ai = Genkit(
+    plugins=[GoogleGenAI(), Anthropic()],
+)
+
+# Use Gemini
+gemini_response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Write a haiku',
+)
+
+# Use Claude
+claude_response = await ai.generate(
+    model='anthropic/claude-3-5-sonnet',
+    prompt='Write a haiku',
+)
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/plugins/googleai"
+)
+
+// Use Gemini
+resp, err := ai.Generate(ctx, &ai.GenerateRequest{
+    Model:  googleai.Model("gemini-2.0-flash"),
+    Prompt: "Write a haiku",
+})
+```
+</CodeGroup>
+
+## Generating Content
+
+### Basic Text Generation
+
+<CodeGroup>
+```typescript JavaScript
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Explain REST APIs in simple terms',
+});
+
+console.log(text);
+```
+
+```python Python
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Explain REST APIs in simple terms',
+)
+
+print(response.text)
+```
+</CodeGroup>
+
+### Structured Output
+
+Request JSON output that matches a schema:
+
+<CodeGroup>
+```typescript JavaScript
+import { z } from 'genkit';
+
+const RecipeSchema = z.object({
+  name: z.string(),
+  ingredients: z.array(z.string()),
+  steps: z.array(z.string()),
+  prepTime: z.string(),
+});
+
+const { output } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Create a recipe for chocolate chip cookies',
+  output: { schema: RecipeSchema },
+});
+
+console.log(output.name);        // Typed!
+console.log(output.ingredients); // Typed!
+```
+
+```python Python
+from pydantic import BaseModel
+
+class Recipe(BaseModel):
+    name: str
+    ingredients: list[str]
+    steps: list[str]
+    prep_time: str
+
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Create a recipe for chocolate chip cookies',
+    output_schema=Recipe,
+)
+
+print(response.output.name)        # Typed!
+print(response.output.ingredients) # Typed!
+```
+</CodeGroup>
+
+### Multimodal Input
+
+Send images, audio, and video to multimodal models:
+
+<CodeGroup>
+```typescript JavaScript
+import { Media } from 'genkit';
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: [
+    { text: 'What is in this image?' },
+    { media: { url: 'https://example.com/image.jpg' } },
+  ],
+});
+```
+
+```python Python
+from genkit.core.typing import Media, Part
+
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt=[
+        Part(text='What is in this image?'),
+        Part(media=Media(url='https://example.com/image.jpg')),
+    ],
+)
+```
+</CodeGroup>
+
+## Model Configuration
+
+Configure model behavior with parameters:
+
+<CodeGroup>
+```typescript JavaScript
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Write a creative story',
+  config: {
+    temperature: 1.2,      // Higher = more creative
+    topK: 40,              // Consider top 40 tokens
+    topP: 0.95,            // Nucleus sampling threshold
+    maxOutputTokens: 1000, // Limit response length
+  },
+});
+```
+
+```python Python
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Write a creative story',
+    config={
+        'temperature': 1.2,
+        'topK': 40,
+        'topP': 0.95,
+        'maxOutputTokens': 1000,
+    },
+)
+```
+</CodeGroup>
+
+### Default Configuration
+
+Set defaults at the Genkit level:
+
+<CodeGroup>
+```typescript JavaScript
+const ai = genkit({
+  plugins: [googleAI()],
+  model: googleAI.model('gemini-2.0-flash', {
+    temperature: 0.7,
+    topK: 40,
+  }),
+});
+
+// Uses default config
+const response = await ai.generate({
+  prompt: 'Hello!',
+});
+```
+
+```python Python
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+    config={'temperature': 0.7, 'topK': 40},
+)
+
+# Uses default config
+response = await ai.generate(prompt='Hello!')
+```
+</CodeGroup>
+
+## Tool Calling
+
+Models can call functions (tools) to extend their capabilities:
+
+<CodeGroup>
+```typescript JavaScript
+const getWeatherTool = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Get current weather for a city',
+    inputSchema: z.object({ city: z.string() }),
+    outputSchema: z.string(),
+  },
+  async ({ city }) => {
+    // Call weather API...
+    return `Weather in ${city}: Sunny, 72°F`;
+  }
+);
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'What is the weather in Paris?',
+  tools: [getWeatherTool],
+});
+
+// Model decides to call getWeather, gets result, and responds:
+// "The weather in Paris is currently sunny with a temperature of 72°F."
+```
+
+```python Python
+@ai.tool()
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    # Call weather API...
+    return f"Weather in {city}: Sunny, 72°F"
+
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='What is the weather in Paris?',
+    tools=['get_weather'],
+)
+
+# Model calls tool automatically and responds with result
+print(response.text)
+```
+</CodeGroup>
+
+## Streaming Responses
+
+Stream responses as they're generated:
+
+<CodeGroup>
+```typescript JavaScript
+const { stream, response } = ai.generateStream({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Write a long story about space exploration',
+});
+
+// Stream chunks as they arrive
+for await (const chunk of stream) {
+  console.log(chunk.text);
+}
+
+// Or wait for the complete response
+const final = await response;
+console.log(final.text);
+```
+
+```python Python
+result = ai.generate_stream(
+    model=gemini_2_0_flash,
+    prompt='Write a long story about space exploration',
+)
+
+# Stream chunks as they arrive
+async for chunk in result.stream:
+    print(chunk.text, end='')
+
+# Or wait for complete response
+final = await result.response
+print(final.text)
+```
+</CodeGroup>
+
+## Available Model Providers
+
+### Official Providers
+
+| Provider | Plugin | Models |
+|----------|--------|--------|
+| **Google AI** | `@genkit-ai/google-genai` (JS)<br/>`genkit.plugins.google_genai` (Python) | Gemini 2.0 Flash, Gemini 1.5 Pro, Imagen, Veo |
+| **Anthropic** | `@genkit-ai/anthropic`<br/>`genkit.plugins.anthropic` | Claude 3.5 Sonnet, Claude 3 Opus |
+| **Vertex AI** | `@genkit-ai/vertexai`<br/>`genkit.plugins.vertex_ai` | Model Garden (1000+ models) |
+| **Ollama** | `@genkit-ai/ollama`<br/>`genkit.plugins.ollama` | Llama, Mistral, CodeLlama (local) |
+| **OpenAI-compatible** | `@genkit-ai/compat-oai`<br/>`genkit.plugins.compat_oai` | Any OpenAI-compatible API |
+
+### Community Providers
+
+- **Amazon Bedrock**: Claude, Llama, Titan models
+- **Mistral AI**: Mistral, Mixtral models  
+- **Cohere**: Command models + reranking
+- **DeepSeek**: DeepSeek models
+- **xAI**: Grok models
+- **HuggingFace**: Inference API models
+- **Cloudflare Workers AI**: Edge AI models
+- **Azure AI Foundry**: 11,000+ models
+
+## Model Middleware
+
+Add behavior to model calls with middleware:
+
+<CodeGroup>
+```typescript JavaScript
+import { retry } from 'genkit/model/middleware';
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Hello!',
+  use: [
+    retry({
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      backoffFactor: 2,
+    }),
+  ],
+});
+```
+
+```python Python
+from genkit.blocks.middleware import retry_middleware
+
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Hello!',
+    use=[retry_middleware(max_retries=3, initial_delay_ms=1000)],
+)
+```
+</CodeGroup>
+
+Common middleware:
+- **Retry**: Automatic retry with exponential backoff
+- **Caching**: Cache responses for identical requests
+- **Safety**: Filter harmful content
+- **Logging**: Log all requests/responses
+- **Custom**: Build your own
+
+## Response Metadata
+
+All responses include metadata:
+
+```typescript
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Hello!',
+});
+
+console.log(response.text);          // Generated text
+console.log(response.usage);         // Token usage stats
+console.log(response.finishReason);  // Why generation stopped
+console.log(response.latencyMs);     // Request duration
+console.log(response.custom);        // Provider-specific metadata
+```
+
+## Next Steps
+
+- Learn about [Prompts](/concepts/prompts) - managing prompt templates
+- Explore [Tools](/concepts/tools) - extending models with functions
+- See [Flows](/concepts/flows) - building multi-step AI workflows

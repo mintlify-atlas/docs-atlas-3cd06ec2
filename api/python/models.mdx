@@ -1,0 +1,99 @@
+---
+title: Models API
+description: Models API reference (Python)
+---
+
+Models provide text and data generation capabilities.
+
+## generate()
+
+See [Genkit.generate()](/api/python/genkit#generate) for full documentation.
+
+```python
+response = await ai.generate(
+    model="gemini-2.0-flash",
+    prompt="Hello!",
+)
+```
+
+## generate_stream()
+
+See [Genkit.generate_stream()](/api/python/genkit#generate_stream) for full documentation.
+
+```python
+async for chunk in ai.generate_stream(prompt="Tell me a story"):
+    if not chunk.done:
+        print(chunk.content, end="")
+```
+
+## ModelReference
+
+```python
+from genkit.blocks.model import ModelRef
+
+model_ref = ModelRef(
+    name="gemini-2.0-flash",
+    config={"temperature": 0.7},
+)
+```
+
+## GenerationCommonConfig
+
+```python
+from genkit.types import GenerationCommonConfig
+
+config = GenerationCommonConfig(
+    temperature=0.7,
+    max_output_tokens=1000,
+    top_p=0.9,
+    top_k=40,
+)
+
+response = await ai.generate(
+    prompt="Hello",
+    config=config,
+)
+```
+
+## Response Types
+
+### GenerateResponseWrapper
+
+```python
+response = await ai.generate(prompt="Hello")
+
+# Access response data
+response.text         # str: Generated text
+response.output       # Any: Structured output (if requested)
+response.message      # Message: Full message object
+response.candidates   # list: All response candidates
+response.usage        # dict: Token usage info
+```
+
+### Message
+
+```python
+from genkit.core.typing import Message, Role
+
+message = Message(
+    role=Role.USER,
+    content=[{"text": "Hello"}],
+)
+```
+
+### Part
+
+```python
+from genkit.core.typing import TextPart, MediaPart
+
+# Text part
+text_part = TextPart(text="Hello")
+
+# Media part  
+media_part = MediaPart(
+    media={
+        "url": "data:image/png;base64,...",
+        "contentType": "image/png",
+    }
+)
+```

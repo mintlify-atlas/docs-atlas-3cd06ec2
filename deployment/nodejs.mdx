@@ -1,0 +1,632 @@
+---
+title: Node.js Deployment
+description: Deploy Genkit flows with Express to any Node.js platform
+---
+
+# Node.js Deployment
+
+Deploy Genkit applications to any Node.js platform using Express integration. Works with Vercel, Fly.io, AWS, Render, Railway, and more.
+
+## Overview
+
+Genkit provides first-class Express.js integration through the `@genkit-ai/express` plugin:
+
+- **Framework agnostic** - Works with any Node.js HTTP server
+- **Built-in streaming** - Server-Sent Events (SSE) support
+- **Authentication** - Context providers for auth
+- **Flexible deployment** - Deploy anywhere Node.js runs
+
+## Installation
+
+```bash
+npm install genkit @genkit-ai/express @genkit-ai/google-genai
+npm install express cors body-parser
+npm install --save-dev @types/express @types/cors
+```
+
+## Basic Setup
+
+### 1. Create Express Server
+
+```typescript src/index.ts
+import { expressHandler } from '@genkit-ai/express';
+import { googleAI } from '@genkit-ai/google-genai';
+import express from 'express';
+import { genkit, z } from 'genkit';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+// Define a flow
+const jokeFlow = ai.defineFlow(
+  {
+    name: 'jokeFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (subject) => {
+    const result = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Tell me a joke about ${subject}`,
+    });
+    return result.text;
+  }
+);
+
+const app = express();
+app.use(express.json());
+
+// Expose flow via expressHandler
+app.post('/joke', expressHandler(jokeFlow));
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+```
+
+### 2. Test Locally
+
+```bash
+# Set API key
+export GEMINI_API_KEY=your-api-key
+
+# Run server
+npm run dev
+
+# Test endpoint
+curl -X POST http://localhost:3000/joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": "programming"}'
+```
+
+## Express Handler Options
+
+### Basic Usage
+
+```typescript
+import { expressHandler } from '@genkit-ai/express';
+
+// Simple handler
+app.post('/flow', expressHandler(myFlow));
+```
+
+### With Authentication
+
+```typescript
+import type { ContextProvider } from 'genkit/context';
+import { UserFacingError } from 'genkit';
+
+interface AuthContext {
+  auth: {
+    username: string;
+  };
+}
+
+// Context provider extracts auth from request
+function requireAuth(requiredUser?: string): ContextProvider<AuthContext> {
+  return (req) => {
+    const token = req.headers['authorization'];
+    
+    const context: AuthContext = {
+      auth: {
+        username: token === 'secret' ? 'admin' : 'guest',
+      },
+    };
+    
+    // Validate
+    if (requiredUser && context.auth.username !== requiredUser) {
+      throw new UserFacingError('PERMISSION_DENIED', context.auth.username);
+    }
+    
+    return context;
+  };
+}
+
+// Apply auth to flow
+app.post(
+  '/secure-flow',
+  expressHandler(myFlow, {
+    contextProvider: requireAuth('admin'),
+  })
+);
+```
+
+### With Streaming
+
+Streaming is enabled automatically when:
+
+1. Request has `Accept: text/event-stream` header, OR
+2. Request has `?stream=true` query parameter
+
+```bash
+# Enable streaming with query param
+curl -X POST http://localhost:3000/joke?stream=true \
+  -H "Content-Type: application/json" \
+  -d '{"data": "cats"}'
+
+# Or with Accept header
+curl -X POST http://localhost:3000/joke \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"data": "cats"}'
+```
+
+Response format:
+
+```
+data: {"message": "Why did the cat"}
+
+data: {"message": " sit on the computer?"}
+
+data: {"result": "Why did the cat sit on the computer? To keep an eye on the mouse!"}
+```
+
+## Flow Server
+
+Use `startFlowServer` to automatically expose all flows:
+
+```typescript
+import { startFlowServer } from '@genkit-ai/express';
+
+// Define flows
+const jokeFlow = ai.defineFlow(/* ... */);
+const summarizeFlow = ai.defineFlow(/* ... */);
+
+// Start server with all flows
+startFlowServer({
+  flows: [jokeFlow, summarizeFlow],
+  port: 3000,
+  cors: { origin: true },
+});
+```
+
+This exposes:
+- `POST /jokeFlow`
+- `POST /summarizeFlow`
+
+### With Authentication
+
+```typescript
+import { withFlowOptions } from '@genkit-ai/express';
+
+startFlowServer({
+  flows: [
+    // Flow with auth
+    withFlowOptions(jokeFlow, {
+      contextProvider: requireAuth('admin'),
+    }),
+    // Flow without auth
+    summarizeFlow,
+  ],
+  port: 3000,
+});
+```
+
+### Custom Paths
+
+```typescript
+startFlowServer({
+  flows: [
+    withFlowOptions(jokeFlow, {
+      path: 'api/joke', // Custom path
+    }),
+  ],
+  pathPrefix: 'v1', // Prefix all paths
+  port: 3000,
+});
+// Results in: POST /v1/api/joke
+```
+
+## Advanced Patterns
+
+### Direct Flow Invocation
+
+```typescript
+// Call flow directly from route handler
+app.get('/joke/:subject', async (req, res) => {
+  try {
+    const result = await jokeFlow(req.params.subject);
+    res.json({ joke: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+### Raw Streaming
+
+```typescript
+app.get('/stream/:subject', async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/plain',
+    'Transfer-Encoding': 'chunked',
+  });
+
+  await ai.generate({
+    prompt: `Tell me a story about ${req.params.subject}`,
+    model: googleAI.model('gemini-2.5-flash'),
+    onChunk: (chunk) => {
+      res.write(chunk.content[0].text);
+    },
+  });
+
+  res.end();
+});
+```
+
+### Multiple Flows
+
+```typescript
+// Automatically expose all defined flows
+ai.flows.forEach((flow) => {
+  app.post(`/${flow.name}`, expressHandler(flow));
+});
+```
+
+### CORS Configuration
+
+```typescript
+import cors from 'cors';
+
+app.use(cors({
+  origin: 'https://yourdomain.com',
+  credentials: true,
+}));
+```
+
+## Deployment Platforms
+
+### Vercel
+
+```json vercel.json
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "src/index.ts"
+    }
+  ]
+}
+```
+
+```bash
+# Deploy
+vercel deploy --prod
+```
+
+### Fly.io
+
+```toml fly.toml
+app = "genkit-app"
+primary_region = "sjc"
+
+[build]
+  builder = "heroku/buildpacks:20"
+
+[env]
+  PORT = "8080"
+
+[[services]]
+  http_checks = []
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+```
+
+```bash
+# Deploy
+flyctl deploy
+
+# Set secrets
+flyctl secrets set GEMINI_API_KEY=your-key
+```
+
+### Render
+
+```yaml render.yaml
+services:
+  - type: web
+    name: genkit-app
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+```
+
+```bash
+# Deploy via dashboard or CLI
+render deploy
+```
+
+### Railway
+
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Deploy
+railway login
+railway init
+railway up
+
+# Set environment variables
+railway variables set GEMINI_API_KEY=your-key
+```
+
+### AWS Elastic Beanstalk
+
+```bash
+# Install EB CLI
+pip install awsebcli
+
+# Initialize
+eb init -p node.js-18 genkit-app
+
+# Create environment
+eb create genkit-env
+
+# Set environment variables
+eb setenv GEMINI_API_KEY=your-key
+
+# Deploy
+eb deploy
+```
+
+### Heroku
+
+```json Procfile
+web: node dist/index.js
+```
+
+```bash
+# Create app
+heroku create genkit-app
+
+# Set config
+heroku config:set GEMINI_API_KEY=your-key
+
+# Deploy
+git push heroku main
+```
+
+## Complete Example
+
+See the full Express integration example:
+
+```bash
+cd js/testapps/express
+npm install
+npm run build
+npm start
+```
+
+Source: `js/testapps/express/src/index.ts`
+
+This example demonstrates:
+- Flow via `expressHandler` with auth
+- Flow without auth
+- Direct flow invocation
+- Raw streaming
+- Context providers
+
+### Testing the Example
+
+```bash
+# Test with auth (requires "Authorization: open sesame")
+curl http://localhost:5000/jokeFlow?stream=true \
+  -d '{"data": "banana"}' \
+  -H "Content-Type: application/json" \
+  -H "Authorization: open sesame"
+
+# Test without auth
+curl http://localhost:5000/jokeHandler?stream=true \
+  -d '{"data": "banana"}' \
+  -H "Content-Type: application/json"
+
+# Test direct flow invocation
+curl "http://localhost:5000/jokeWithFlow?subject=banana"
+
+# Test raw streaming
+curl "http://localhost:5000/jokeStream?subject=banana"
+```
+
+## Durable Streaming (Beta)
+
+Persist stream state to handle client reconnections:
+
+```typescript
+import { InMemoryStreamManager } from 'genkit/beta';
+
+const streamManager = new InMemoryStreamManager({
+  ttl: 600000, // 10 minutes
+});
+
+app.post(
+  '/durable-stream',
+  expressHandler(myStreamingFlow, {
+    streamManager,
+  })
+);
+```
+
+Clients receive a stream ID in the `X-Genkit-Stream-Id` header:
+
+```bash
+# Initial request
+curl -X POST http://localhost:3000/durable-stream \
+  -H "Accept: text/event-stream" \
+  -d '{"data": "input"}' \
+  -i  # Show headers
+
+# Reconnect with stream ID
+curl -X POST http://localhost:3000/durable-stream \
+  -H "Accept: text/event-stream" \
+  -H "X-Genkit-Stream-Id: <stream-id>" \
+  -d '{"data": "input"}'
+```
+
+## Production Best Practices
+
+### 1. Error Handling
+
+```typescript
+import { UserFacingError } from 'genkit';
+
+const safeFlow = ai.defineFlow(
+  { name: 'safeFlow' },
+  async (input) => {
+    try {
+      return await ai.generate({ prompt: input });
+    } catch (error) {
+      console.error('Generation failed:', error);
+      throw new UserFacingError(
+        'INTERNAL',
+        'Failed to generate response'
+      );
+    }
+  }
+);
+```
+
+### 2. Request Validation
+
+```typescript
+app.post('/joke', (req, res, next) => {
+  if (!req.body || !req.body.data) {
+    return res.status(400).json({ error: 'Missing data field' });
+  }
+  next();
+}, expressHandler(jokeFlow));
+```
+
+### 3. Rate Limiting
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+});
+
+app.use('/api/', limiter);
+```
+
+### 4. Timeout Handling
+
+```typescript
+app.use((req, res, next) => {
+  req.setTimeout(300000); // 5 minutes
+  res.setTimeout(300000);
+  next();
+});
+```
+
+### 5. Health Checks
+
+```typescript
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+  });
+});
+```
+
+## Monitoring
+
+### Express Middleware
+
+```typescript
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+  });
+  next();
+});
+```
+
+### Structured Logging
+
+```typescript
+import { logger } from 'genkit/logging';
+
+logger.setLogLevel('debug');
+
+app.use((req, res, next) => {
+  logger.info('Request received', {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+  });
+  next();
+});
+```
+
+## Troubleshooting
+
+### Request Body Undefined
+
+**Problem:** `request.body` is undefined.
+
+**Solution:** Add JSON middleware:
+
+```typescript
+app.use(express.json());
+```
+
+### CORS Errors
+
+**Problem:** Browser blocks requests.
+
+**Solution:** Enable CORS:
+
+```typescript
+import cors from 'cors';
+app.use(cors({ origin: true }));
+```
+
+### Streaming Not Working
+
+**Problem:** Streaming doesn't start.
+
+**Solution:** Add query parameter or header:
+
+```bash
+curl -X POST http://localhost:3000/flow?stream=true ...
+# OR
+curl -X POST http://localhost:3000/flow \
+  -H "Accept: text/event-stream" ...
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Express Plugin" icon="node-js" href="/plugins/express">
+    Full Express plugin documentation
+  </Card>
+  <Card title="Cloud Run" icon="docker" href="/deployment/cloud-run">
+    Deploy to Google Cloud Run
+  </Card>
+</CardGroup>

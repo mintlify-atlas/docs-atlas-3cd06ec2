@@ -1,0 +1,361 @@
+---
+title: Prompts API
+description: Prompt definition and execution APIs
+---
+
+# Prompts API
+
+Prompts in Genkit provide a structured way to define and manage model interactions with built-in support for templates, schemas, and tool integration.
+
+## definePrompt()
+
+Defines and registers a prompt based on a function or template.
+
+**Signature:**
+
+```typescript
+definePrompt<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  CustomOptions extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  registry: Registry,
+  options: PromptConfig<I, O, CustomOptions>,
+  templateOrFn?: string | PromptFn<I>
+): ExecutablePrompt<z.infer<I>, O, CustomOptions>
+```
+
+### Parameters
+
+<ParamField path="options" type="PromptConfig" required>
+  Prompt configuration
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Unique prompt identifier
+    </ParamField>
+
+    <ParamField path="model" type="ModelArgument" optional>
+      Model to use for this prompt
+    </ParamField>
+
+    <ParamField path="input" type="{ schema: z.ZodTypeAny, default?: any }" optional>
+      Input schema and default values
+    </ParamField>
+
+    <ParamField path="output" type="{ schema?: z.ZodTypeAny, format?: string }" optional>
+      Output schema and format specification
+    </ParamField>
+
+    <ParamField path="config" type="GenerationCommonConfig" optional>
+      Model configuration (temperature, maxOutputTokens, etc.)
+    </ParamField>
+
+    <ParamField path="messages" type="string | MessagesFunction" optional>
+      Template string or function that returns messages
+    </ParamField>
+
+    <ParamField path="tools" type="ToolAction[]" optional>
+      Tools available to the prompt
+    </ParamField>
+
+    <ParamField path="description" type="string" optional>
+      Human-readable description
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="templateOrFn" type="string | PromptFn" optional>
+  Template string or function (deprecated - use `options.messages` instead)
+</ParamField>
+
+### Returns
+
+<ResponseField name="prompt" type="ExecutablePrompt">
+  An executable prompt that can be called like a function
+
+  <Expandable title="methods">
+    <ResponseField name="()" type="(input?: I, opts?: PromptGenerateOptions) => Promise<GenerateResponse>">
+      Execute the prompt and generate a response
+    </ResponseField>
+
+    <ResponseField name="render()" type="(input?: I, opts?: PromptGenerateOptions) => Promise<GenerateOptions>">
+      Render the prompt to GenerateOptions without executing
+    </ResponseField>
+
+    <ResponseField name="stream()" type="(input?: I, opts?: PromptGenerateOptions) => GenerateStreamResponse">
+      Execute the prompt with streaming
+    </ResponseField>
+
+    <ResponseField name="asTool()" type="() => Promise<ToolAction>">
+      Convert the prompt to a tool
+    </ResponseField>
+
+    <ResponseField name="ref" type="{ name: string }">
+      Reference object with prompt name
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+import { definePrompt } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+// Simple template
+const greetingPrompt = definePrompt(
+  registry,
+  {
+    name: 'greeting',
+    input: {
+      schema: z.object({ name: z.string() }),
+    },
+    messages: 'Hello, {{name}}! How are you today?',
+  }
+);
+
+const response = await greetingPrompt({ name: 'Alice' });
+console.log(response.text);
+
+// With function
+const summaryPrompt = definePrompt(
+  registry,
+  {
+    name: 'summary',
+    model: 'googleai/gemini-2.0-flash-exp',
+    input: {
+      schema: z.object({ text: z.string() }),
+    },
+    output: {
+      schema: z.object({ summary: z.string() }),
+      format: 'json',
+    },
+    messages: async (input) => [
+      {
+        role: 'user',
+        content: [{ text: `Summarize this text: ${input.text}` }],
+      },
+    ],
+  }
+);
+
+const result = await summaryPrompt({ text: 'Long article...' });
+const { summary } = result.output();
+```
+
+## prompt()
+
+Looks up a prompt by name (from `.prompt` files or defined prompts).
+
+**Signature:**
+
+```typescript
+prompt<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  CustomOptions extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  registry: Registry,
+  name: string,
+  options?: { variant?: string; dir?: string }
+): Promise<ExecutablePrompt<z.infer<I>, O, CustomOptions>>
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  Prompt name (without .prompt extension)
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <Expandable title="properties">
+    <ParamField path="variant" type="string" optional>
+      Prompt variant to load (e.g., 'long', 'short')
+    </ParamField>
+
+    <ParamField path="dir" type="string" optional default="'./prompts'">
+      Directory containing prompt files
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { prompt } from '@genkit-ai/ai';
+
+// Load a .prompt file
+const greetingPrompt = await prompt(registry, 'greeting');
+const response = await greetingPrompt({ name: 'World' });
+
+// Load a variant
+const longGreeting = await prompt(registry, 'greeting', { variant: 'long' });
+```
+
+## loadPromptFolder()
+
+Loads all `.prompt` files from a directory.
+
+**Signature:**
+
+```typescript
+loadPromptFolder(
+  registry: Registry,
+  directory: string,
+  namespace?: string
+): void
+```
+
+### Parameters
+
+<ParamField path="directory" type="string" required>
+  Path to directory containing `.prompt` files
+</ParamField>
+
+<ParamField path="namespace" type="string" optional default="''">
+  Namespace prefix for loaded prompts
+</ParamField>
+
+### Example
+
+```typescript
+import { loadPromptFolder } from '@genkit-ai/ai';
+
+// Load prompts from ./prompts directory
+loadPromptFolder(registry, './prompts');
+
+// Load with namespace
+loadPromptFolder(registry, './custom-prompts', 'custom');
+// Prompts will be accessible as 'custom/promptName'
+```
+
+## Dotprompt Files
+
+Genkit supports `.prompt` files using a YAML-like format:
+
+```yaml
+---
+model: googleai/gemini-2.0-flash-exp
+input:
+  schema:
+    name: string
+    style?: string
+output:
+  format: json
+  schema:
+    greeting: string
+config:
+  temperature: 0.7
+---
+
+{{#if style}}{{style}} greeting for{{else}}Hello{{/if}} {{name}}!
+```
+
+### Usage
+
+```typescript
+// Automatically loaded from ./prompts/greeting.prompt
+const greeting = await ai.prompt('greeting');
+
+const response = await greeting({ name: 'Alice', style: 'Formal' });
+const { greeting: text } = response.output();
+```
+
+## Prompt Types
+
+### PromptConfig
+
+```typescript
+interface PromptConfig<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  CustomOptions extends z.ZodTypeAny = z.ZodTypeAny
+> {
+  name: string;
+  model?: ModelArgument<CustomOptions>;
+  input?: {
+    schema?: I;
+    default?: z.infer<I>;
+  };
+  output?: {
+    schema?: O;
+    format?: string;
+  };
+  config?: z.infer<CustomOptions>;
+  messages?: string | MessagesFunction<I>;
+  tools?: ToolAction[];
+  description?: string;
+}
+```
+
+### ExecutablePrompt
+
+```typescript
+interface ExecutablePrompt<I = any, O = any, CustomOptions = any> {
+  (input?: I, opts?: PromptGenerateOptions<O, CustomOptions>): Promise<GenerateResponse<O>>;
+  
+  render(
+    input?: I,
+    opts?: PromptGenerateOptions<O, CustomOptions>
+  ): Promise<GenerateOptions<O, CustomOptions>>;
+  
+  stream(
+    input?: I,
+    opts?: PromptGenerateOptions<O, CustomOptions>
+  ): GenerateStreamResponse<O>;
+  
+  asTool(): Promise<ToolAction<I, O>>;
+  
+  ref: { name: string };
+}
+```
+
+### PromptGenerateOptions
+
+Options when executing a prompt:
+
+```typescript
+interface PromptGenerateOptions<O = any, CustomOptions = any> {
+  model?: ModelArgument<CustomOptions>;
+  config?: z.infer<CustomOptions>;
+  docs?: Document[];
+  messages?: MessageData[];
+  // Override output settings
+  output?: {
+    schema?: z.ZodTypeAny;
+    format?: string;
+  };
+}
+```
+
+## Usage with Genkit Instance
+
+```typescript
+import { genkit } from 'genkit';
+import { z } from 'zod';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+// Define a prompt
+const myPrompt = ai.definePrompt(
+  {
+    name: 'myPrompt',
+    input: { schema: z.object({ topic: z.string() }) },
+    messages: 'Tell me about {{topic}}',
+  }
+);
+
+// Use the prompt
+const response = await myPrompt({ topic: 'TypeScript' });
+
+// Look up a .prompt file
+const dotPrompt = ai.prompt('greeting');
+const result = await dotPrompt({ name: 'World' });
+```
+
+## See Also
+
+- [Genkit API](/api/javascript/genkit)
+- [Models API](/api/javascript/models)
+- [Tools API](/api/javascript/tools)

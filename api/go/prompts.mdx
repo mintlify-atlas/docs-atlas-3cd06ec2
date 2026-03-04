@@ -1,0 +1,141 @@
+---
+title: Prompts API
+description: Prompts API reference (Go)
+---
+
+Prompts encapsulate model configuration, templates, and schemas.
+
+See [genkit.DefinePrompt()](/api/go/genkit#defineprompt) for full API documentation.
+
+## Quick Reference
+
+```go
+type Input struct {
+    Name string `json:"name"`
+}
+
+type Output struct {
+    Greeting string `json:"greeting"`
+}
+
+prompt := genkit.DefinePrompt(g, "greet",
+    ai.WithModelName("googleai/gemini-2.0-flash"),
+    ai.WithPrompt("Say hello to {{name}}"),
+    ai.WithInputType(Input{}),
+    ai.WithOutputType(Output{}),
+)
+
+// Execute
+resp, err := prompt.Execute(ctx,
+    ai.WithInput(Input{Name: "Alice"}),
+)
+
+var out Output
+resp.Output(&out)
+```
+
+## Prompt Options
+
+### Model Configuration
+- `ai.WithModel(model)`
+- `ai.WithModelName(string)`
+- `ai.WithConfig(any)`
+
+### Prompt Content  
+- `ai.WithPrompt(string)` - User prompt template
+- `ai.WithPromptFn(func)` - Dynamic user prompt
+- `ai.WithSystem(string)` - System instructions
+- `ai.WithSystemFn(func)` - Dynamic system instructions
+- `ai.WithMessages([]*Message)` - Conversation history
+- `ai.WithMessagesFn(func)` - Dynamic messages
+
+### Input/Output
+- `ai.WithInputType(T)` - Input schema from type
+- `ai.WithInputSchema(map[string]any)` - Custom input schema
+- `ai.WithOutputType(T)` - Output schema from type
+- `ai.WithOutputSchema(map[string]any)` - Custom output schema
+- `ai.WithOutputFormat(string)` - Output format (json, text)
+
+### Tools
+- `ai.WithTools(...Tool)` - Enable tools
+- `ai.WithToolChoice(ToolChoice)` - Control tool usage
+- `ai.WithMaxTurns(int)` - Max tool iterations
+
+## Prompt Methods
+
+### Execute()
+
+```go
+resp, err := prompt.Execute(ctx,
+    ai.WithInput(input),
+    ai.WithConfig(config),
+)
+```
+
+### ExecuteStream()
+
+```go
+for value, err := range prompt.ExecuteStream(ctx,
+    ai.WithInput(input),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if value.Done {
+        fmt.Println(value.Response.Text())
+    } else {
+        fmt.Print(value.Chunk.Text())
+    }
+}
+```
+
+### Render()
+
+```go
+opts, err := prompt.Render(ctx, input)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Modify opts if needed
+resp, err := genkit.GenerateWithRequest(ctx, g, opts, nil, nil)
+```
+
+## DataPrompt (Typed)
+
+```go
+type GeoInput struct {
+    Country string `json:"country"`
+}
+
+type GeoOutput struct {
+    Capital string `json:"capital"`
+}
+
+prompt := genkit.DefineDataPrompt[GeoInput, GeoOutput](g, "findCapital",
+    ai.WithModelName("googleai/gemini-2.0-flash"),
+    ai.WithPrompt("Capital of {{country}}?"),
+)
+
+// Execute with type safety
+output, resp, err := prompt.Execute(ctx, GeoInput{Country: "France"})
+fmt.Println(output.Capital) // "Paris"
+```
+
+## Loading .prompt Files
+
+```go
+// Auto-load from directory
+g := genkit.Init(ctx,
+    genkit.WithPromptDir("./prompts"),
+)
+
+// Or load manually
+genkit.LoadPromptDir(g.Registry(), "./prompts", "")
+
+// Lookup loaded prompt
+prompt := genkit.LookupPrompt(g, "myPrompt")
+if prompt != nil {
+    resp, err := prompt.Execute(ctx, nil)
+}
+```

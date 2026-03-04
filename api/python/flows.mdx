@@ -1,0 +1,84 @@
+---
+title: Flows API
+description: Flows API reference (Python)
+---
+
+Flows orchestrate multi-step AI tasks with automatic tracing.
+
+## @ai.flow() Decorator
+
+Defines a flow.
+
+```python
+@ai.flow()
+async def summarize_article(url: str) -> str:
+    """Summarizes an article from a URL."""
+    # Flow implementation
+    content = await fetch_article(url)
+    
+    response = await ai.generate(
+        prompt=f"Summarize: {content}",
+    )
+    
+    return response.text
+
+# Call the flow
+result = await summarize_article("https://example.com")
+```
+
+### Parameters
+
+<ParamField path="name" type="str | None">
+  Flow name (defaults to function name)
+</ParamField>
+
+<ParamField path="input_schema" type="type | dict | None">
+  Input schema for validation
+</ParamField>
+
+<ParamField path="output_schema" type="type | dict | None">
+  Output schema for validation
+</ParamField>
+
+## Flow Execution
+
+```python
+# Direct call
+result = await my_flow(input_data)
+
+# Access flow metadata
+my_flow.name          # Flow name
+my_flow.action        # Underlying Action object
+```
+
+## Nested Flows
+
+```python
+@ai.flow()
+async def process_data(data: str) -> str:
+    """Processes data."""
+    return data.upper()
+
+@ai.flow()
+async def main_workflow(input: str) -> str:
+    """Main workflow calling sub-flow."""
+    # Call another flow
+    processed = await process_data(input)
+    
+    response = await ai.generate(
+        prompt=f"Analyze: {processed}",
+    )
+    
+    return response.text
+```
+
+## FlowWrapper
+
+```python
+from genkit import FlowWrapper
+
+flow: FlowWrapper = ai.flow()(my_function)
+
+# Execute
+result = await flow(input_data)
+```

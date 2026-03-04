@@ -1,0 +1,266 @@
+---
+title: Architecture
+description: Understanding Genkit's architecture and how components work together
+---
+
+Genkit is designed around a flexible, plugin-based architecture that makes it easy to build AI applications with any model provider, telemetry backend, or vector store.
+
+## Architecture Overview
+
+At the heart of Genkit is a **Registry** that manages all actions (flows, tools, models, prompts, etc.) and coordinates between your application code, plugins, and observability systems.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Your Application                                    │
+│                                                                             │
+│   from genkit import Genkit                                                 │
+│   ai = Genkit(plugins=[GoogleGenAI()], model=gemini_2_0_flash)             │
+│                                                                             │
+│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐  ┌───────────┐     │
+│   │  Flows  │  │  Tools  │  │ Prompts │  │ Embedders│  │ Retrievers│     │
+│   │@ai.flow │  │@ai.tool │  │.prompt  │  │ai.embed()│  │ai.retrieve│     │
+│   └────┬────┘  └────┬────┘  └────┬────┘  └────┬─────┘  └─────┬─────┘     │
+│        │            │            │             │             │              │
+│        └────────────┴────────────┴─────────────┴─────────────┘              │
+│                                  │                                          │
+│                          ┌───────▼────────┐                                 │
+│                          │    Registry     │                                 │
+│                          │  (all actions)  │                                 │
+│                          └───────┬────────┘                                 │
+│                                  │                                          │
+│             ┌────────────────────┼────────────────────┐                     │
+│             ▼                    ▼                    ▼                     │
+│      ┌────────────┐     ┌──────────────┐     ┌──────────────┐             │
+│      │   Plugins   │     │   Tracing     │     │  Reflection  │             │
+│      │ (providers) │     │ (OpenTelemetry│     │  API (DevUI) │             │
+│      └────────────┘     └──────────────┘     └──────────────┘             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Core Components
+
+### Registry
+
+The Registry is Genkit's central nervous system. It:
+
+- **Stores all actions**: Flows, tools, models, prompts, embedders, and retrievers
+- **Resolves actions by name**: Looks up actions when you reference them (e.g., `model='googleai/gemini-2.0-flash'`)
+- **Manages plugins**: Coordinates plugin initialization and action resolution
+- **Powers the Dev UI**: Provides the Reflection API that lets the Developer UI discover and run your actions
+
+### Actions
+
+Everything in Genkit is an **Action** - a unit of work with:
+
+- **Name and kind**: Identifies the action type (flow, tool, model, etc.)
+- **Input/output schemas**: Type-safe contracts using Zod (JS) or Pydantic (Python)
+- **Execution function**: The actual code that runs
+- **Automatic tracing**: Every action execution is recorded for observability
+
+```typescript
+// JavaScript
+export const myFlow = ai.defineFlow(
+  { name: 'myFlow', inputSchema: z.string(), outputSchema: z.string() },
+  async (input) => {
+    return `Hello, ${input}!`;
+  }
+);
+```
+
+```python
+# Python
+@ai.flow()
+async def my_flow(input: str) -> str:
+    return f"Hello, {input}!"
+```
+
+```go
+// Go
+func MyFlow(ctx context.Context, input string) (string, error) {
+    return fmt.Sprintf("Hello, %s!", input), nil
+}
+
+flow := core.DefineFlow("myFlow", MyFlow)
+```
+
+### Plugins
+
+Plugins extend Genkit's capabilities. Each plugin:
+
+- **Implements a common interface**: `Plugin` base class with `init()`, `resolve()`, and `list_actions()` methods
+- **Loads lazily**: Only initialized when first used, not at startup
+- **Registers actions**: Can pre-register actions during `init()` or resolve them on-demand
+- **Has a namespace**: Prevents naming conflicts (e.g., `googleai/gemini-2.0-flash`)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  Plugin (Abstract Base Class)                       │
+│                  genkit.core.plugin.Plugin                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  name: str                                                          │
+│  ─────────────────────────────────────                              │
+│  Plugin namespace (e.g., 'googleai', 'anthropic', 'ollama')        │
+│                                                                     │
+│  async init() → list[Action]            ← called once per plugin   │
+│  ─────────────────────────────────────                              │
+│  One-time initialization; returns actions to pre-register.          │
+│  Called lazily on first action resolution, NOT at registration.     │
+│                                                                     │
+│  async resolve(kind, name) → Action?    ← called per lookup        │
+│  ─────────────────────────────────────                              │
+│  Resolve a single action by kind and name. Returns None if         │
+│  this plugin doesn't handle the requested action.                   │
+│                                                                     │
+│  async list_actions() → list[ActionMetadata]  ← for Dev UI         │
+│  ─────────────────────────────────────                              │
+│  Advertise available actions without heavy initialization.          │
+│  Called by the Reflection API for DevUI action discovery.           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## Plugin Lifecycle
+
+Plugins go through four phases:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Plugin Lifecycle                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Phase 1: REGISTRATION (at Genkit startup)                         │
+│  ─────────                                                         │
+│  ai = Genkit(plugins=[GoogleAI(), Anthropic()])                    │
+│       │                                                            │
+│       ├─► registry.register_plugin(GoogleAI())                     │
+│       └─► registry.register_plugin(Anthropic())                    │
+│           │                                                        │
+│           ▼                                                        │
+│       ┌────────────────────────────────────────┐                   │
+│       │  Registry._plugins                      │                   │
+│       │  ┌────────────────┬───────────────────┐ │                   │
+│       │  │ "googleai"     │ GoogleAI instance │ │                   │
+│       │  │ "anthropic"    │ Anthropic instance│ │                   │
+│       │  └────────────────┴───────────────────┘ │                   │
+│       └────────────────────────────────────────┘                   │
+│                                                                     │
+│  Phase 2: LAZY INIT (on first action resolution)                   │
+│  ──────────                                                        │
+│  await ai.generate(model='googleai/gemini-2.0-flash', ...)        │
+│       │                                                            │
+│       ▼                                                            │
+│  registry._ensure_plugin_initialized('googleai')                   │
+│       │                                                            │
+│       ▼                                                            │
+│  actions = await plugin.init()    ← called exactly once            │
+│       │                            (subsequent calls are no-ops)   │
+│       ▼                                                            │
+│  for action in actions:                                            │
+│      registry.register_action_instance(action)                     │
+│                                                                     │
+│  Phase 3: ACTION RESOLUTION (on each usage)                        │
+│  ─────────────────────                                             │
+│  await plugin.resolve(ActionKind.MODEL, 'googleai/gemini-2.0-flash')│
+│       │                                                            │
+│       ▼                                                            │
+│  Action instance returned and cached in registry                   │
+│                                                                     │
+│  Phase 4: ACTION DISCOVERY (for Dev UI)                            │
+│  ──────────────────                                                │
+│  await plugin.list_actions()                                       │
+│       │                                                            │
+│       ▼                                                            │
+│  ActionMetadata[] returned to Reflection API                       │
+│  (does NOT trigger init — must be fast and safe)                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## Action Resolution
+
+When you reference an action by name, the Registry uses a multi-step resolution algorithm:
+
+```
+ai.generate(model="googleai/gemini-2.0-flash")
+     │
+     ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Step 1: CACHE HIT?                                              │
+│  Is "googleai/gemini-2.0-flash" already in registry._entries?    │
+│     ├── YES → return cached Action (fast path)                   │
+│     └── NO  → continue to Step 2                                 │
+├──────────────────────────────────────────────────────────────────┤
+│  Step 2: NAMESPACED or UNPREFIXED?                               │
+│  Does the name contain "/"?                                      │
+│     │                                                            │
+│     ├── YES ("googleai/gemini-2.0-flash")                        │
+│     │    ├── Find plugin "googleai"                               │
+│     │    ├── await _ensure_plugin_initialized("googleai")         │
+│     │    ├── Check cache again (init may have registered it)     │
+│     │    └── await plugin.resolve(MODEL, "googleai/gemini-2.0")  │
+│     │                                                            │
+│     └── NO ("gemini-2.0-flash")                                  │
+│          ├── Try ALL plugins                                      │
+│          ├── If 1 match  → use it                                 │
+│          ├── If 2+ match → ValueError (ambiguous)                │
+│          └── If 0 match  → continue to Step 3                    │
+├──────────────────────────────────────────────────────────────────┤
+│  Step 3: DYNAMIC ACTION PROVIDERS (fallback)                     │
+│  Try registered Dynamic Action Providers (e.g., MCP servers)     │
+│     ├── Found → register and return                              │
+│     └── Not found → return None                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Tracing and Observability
+
+Genkit automatically instruments all actions with **OpenTelemetry** tracing:
+
+```
+ai.generate(prompt="Tell me a joke")
+     │
+     ▼
+┌──────────┐    ┌───────────┐    ┌──────────┐    ┌──────────┐
+│  1. Flow  │───►│ 2. Model  │───►│ 3. Tool? │───►│ 4. Model │
+│  starts   │    │  called   │    │  (if the │    │ responds │
+│  tracing  │    │  (Gemini, │    │  model   │    │  with    │
+│           │    │  Claude,  │    │  decides │    │  final   │
+│           │    │  etc.)    │    │  to use  │    │  answer  │
+│           │    │           │    │  one)    │    │          │
+└──────────┘    └───────────┘    └──────────┘    └──────────┘
+     │                │               │               │
+     └────────────────┴───────────────┴───────────────┘
+                              │
+                  ┌───────────▼───────────┐
+                  │   Trace (every step   │
+                  │   recorded for DevUI, │
+                  │   Cloud Trace, etc.)  │
+                  └──────────────────────┘
+```
+
+Every action execution creates a span with:
+- Input and output data
+- Execution duration
+- Error information (if any)
+- Custom metadata
+
+## Multi-Language Support
+
+Genkit maintains feature parity across three languages:
+
+| Language | Package | Status |
+|----------|---------|--------|
+| **JavaScript/TypeScript** | `genkit` | Primary SDK |
+| **Python** | `genkit` | Feature parity with JS |
+| **Go** | `github.com/firebase/genkit/go/core` | Production-ready |
+
+The architecture is consistent across all three:
+- Same plugin model
+- Same action types
+- Same tracing integration
+- Same Dev UI support
+
+## Next Steps
+
+- Learn about [Flows](/concepts/flows) - the building blocks of Genkit applications
+- Explore [Plugins](/concepts/plugins) - how to extend Genkit's capabilities
+- Understand [Observability](/concepts/observability) - tracing and monitoring your AI apps

@@ -1,0 +1,316 @@
+---
+title: Changelog
+description: Latest updates and version history for Genkit
+---
+
+Stay up to date with the latest changes, improvements, and new features in Genkit.
+
+## Release Channels
+
+Genkit maintains separate release schedules for each SDK:
+
+- **JavaScript/TypeScript**: Production-ready, stable releases
+- **Go**: Production-ready, stable releases  
+- **Python**: Alpha releases with core functionality
+
+## Latest Releases
+
+### Python SDK (Alpha)
+
+The Python SDK is under active development with alpha releases.
+
+#### Version 0.5.0 (February 4, 2026)
+
+Major release with **178 commits** and **680 files changed** over **8 months** since 0.4.0.
+
+**Highlights:**
+
+<AccordionGroup>
+  <Accordion title="New Model Provider Plugins (7)">
+    - **Anthropic**: Full Claude model support
+    - **Amazon Bedrock**: AWS Bedrock for Claude, Titan, Llama
+    - **Microsoft Foundry**: Azure OpenAI integration
+    - **Cloudflare Workers AI**: Cloudflare AI models  
+    - **DeepSeek**: DeepSeek models with structured output
+    - **xAI**: Grok models
+    - **Mistral**: Mistral AI models (Large, Small, Codestral, Pixtral)
+    - **HuggingFace**: Inference API with 17+ providers
+  </Accordion>
+  
+  <Accordion title="New Telemetry Plugins (3)">
+    - **AWS X-Ray**: Telemetry with SigV4 signing
+    - **Observability**: Third-party backends (Sentry, Honeycomb, Datadog, Grafana, Axiom)
+    - **Google Cloud**: GCP telemetry parity with JS/Go
+  </Accordion>
+  
+  <Accordion title="Core Framework Features">
+    - **Agentive Tool Calling**: Define tools with `@ai.tool()` decorator
+    - **Rerankers**: Initial reranker implementation for RAG
+    - **Background Models**: Dynamic model discovery
+    - **Resource Support**: Full resource management with MCP integration  
+    - **Evaluator Metrics**: ANSWER_RELEVANCY, FAITHFULNESS, MALICIOUSNESS
+    - **Output Formats**: Array, enum, and JSONL formats
+    - **Pydantic Output**: Return Pydantic instances with output schema
+  </Accordion>
+  
+  <Accordion title="Dotprompt Integration">
+    - Upgraded to Dotpromptz 0.1.5
+    - Python 3.14 support
+    - Directory/file prompt loading
+    - Handlebars partials with `define_partial`
+    - Callable support for prompts
+    - Cycle detection in partial resolution
+    - Path traversal security hardening
+  </Accordion>
+  
+  <Accordion title="Developer Experience">
+    - **Hot Reloading**: Watchdog-based autoreloading for all samples
+    - **Security Scanning**: PySentry integration in CI
+    - **TODO Linting**: Automated issue creation
+    - **Type Safety**: ty, pyrefly, and pyright integration
+    - **Sample Improvements**: Rich tracebacks, browser auto-open
+  </Accordion>
+  
+  <Accordion title="Breaking Changes">
+    - **PluginV2 Refactor**: Major plugin architecture update (migration required)
+    - **Async-First Architecture**: Removed sync base, fully async by default  
+    - **Embed API**: Refactored `embed/embed_many` for JS parity
+  </Accordion>
+</AccordionGroup>
+
+**Security Updates:**
+- Ruff security audit fixes
+- SigV4 signing for AWS X-Ray
+- Path traversal hardening (CWE-22)
+- PySentry continuous vulnerability scanning
+
+**Performance:**
+- Per-event-loop HTTP client caching
+- Dotprompt release pipeline 15x faster (30min → 2min)
+- CI consolidation
+
+**Contributors:** 13 developers across 188 PRs
+
+<Card title="Full Python Changelog" icon="python" href="https://github.com/firebase/genkit/blob/main/py/CHANGELOG.md">
+  View detailed Python SDK changelog
+</Card>
+
+#### Version 0.4.0 (May 26, 2025)
+
+**Added:**
+- Telemetry plugins: Microsoft Foundry, Cloudflare, Observability
+- Model providers: Mistral, HuggingFace
+- Improved tracing and observability
+- Enhanced type safety
+
+#### Version 0.3.0 (April 8, 2025)
+
+**Initial public release:**
+- Core framework (`genkit`)
+- Model plugins: Anthropic, Google GenAI, Ollama, Vertex AI, xAI, DeepSeek
+- Telemetry plugins: AWS, Google Cloud, Firebase  
+- Utility plugins: Flask, MCP, Evaluators, Dev Local Vectorstore
+
+### JavaScript/TypeScript SDK
+
+The JavaScript SDK is production-ready and follows semantic versioning.
+
+<Card title="JavaScript Releases" icon="js" href="https://github.com/firebase/genkit/releases">
+  View JavaScript/TypeScript release notes on GitHub
+</Card>
+
+**Recent updates:**
+- Multi-agent support with agent handoffs
+- Enhanced streaming capabilities
+- Improved Firebase integration
+- New model provider plugins
+- Developer UI improvements
+
+### Go SDK
+
+The Go SDK is production-ready with full feature support.
+
+<Card title="Go Releases" icon="golang" href="https://github.com/firebase/genkit/releases">
+  View Go SDK release notes on GitHub  
+</Card>
+
+**Recent updates:**
+- MCP (Model Context Protocol) support
+- Durable streaming with Firestore
+- Firebase retrievers integration
+- Imagen image generation
+- Code execution with Gemini
+
+## Migration Guides
+
+### Python SDK Migrations
+
+#### Migrating to 0.5.0 (PluginV2)
+
+Version 0.5.0 introduces a breaking change with the PluginV2 refactor.
+
+**Key Changes:**
+- Plugins use standardized registration pattern
+- More consistent configuration across plugins
+- Improved type safety
+
+**Migration Steps:**
+
+1. Update plugin initialization:
+   ```python
+   # Before (0.4.0)
+   from genkit.plugins.google_genai import GoogleGenAI
+   ai = Genkit(plugins=[GoogleGenAI(api_key=key)])
+   
+   # After (0.5.0)  
+   from genkit.plugins.google_genai import google_genai
+   ai = Genkit(plugins=[google_genai(api_key=key)])
+   ```
+
+2. Update async patterns:
+   ```python
+   # Version 0.5.0 is fully async-first
+   # Remove any sync base class usage
+   async def my_flow():
+       result = await ai.generate(...)
+   ```
+
+3. Update embed API calls:
+   ```python
+   # Before
+   embeddings = embedder.embed(texts)
+   
+   # After (matches JS API)
+   embedding = await embedder.embed(text)  # single
+   embeddings = await embedder.embed_many(texts)  # multiple
+   ```
+
+<Card title="Python Migration Guide" icon="book" href="https://github.com/firebase/genkit/blob/main/py/MIGRATION.md">
+  Detailed migration guide (if available)
+</Card>
+
+### JavaScript/TypeScript Migrations
+
+Semantic versioning ensures backward compatibility in minor and patch releases. Breaking changes only in major versions.
+
+### Go Migrations
+
+Semantic versioning with backward compatibility maintained in minor releases.
+
+## Upgrade Recommendations
+
+### When to Upgrade
+
+<AccordionGroup>
+  <Accordion title="Immediate (Security & Critical Bugs)">
+    Upgrade immediately for:
+    - Security vulnerabilities
+    - Data corruption bugs
+    - Critical functionality issues
+  </Accordion>
+  
+  <Accordion title="Soon (New Features & Improvements)">
+    Upgrade soon for:
+    - New model provider support
+    - Performance improvements  
+    - Developer experience enhancements
+    - New framework features you need
+  </Accordion>
+  
+  <Accordion title="When Convenient (Minor Updates)">
+    Upgrade when convenient for:
+    - Documentation improvements
+    - Minor bug fixes
+    - Non-critical enhancements
+  </Accordion>
+</AccordionGroup>
+
+### Testing Upgrades
+
+Before upgrading production systems:
+
+1. **Review changelog**: Understand what's changing
+2. **Test in development**: Validate in non-production environment
+3. **Run test suite**: Ensure existing tests pass  
+4. **Check breaking changes**: Review migration guides
+5. **Update dependencies**: Keep all Genkit packages in sync
+
+## Release Notes
+
+Detailed release notes for all versions are available on GitHub:
+
+<CardGroup cols={2}>
+  <Card title="All Releases" icon="github" href="https://github.com/firebase/genkit/releases">
+    View all Genkit releases on GitHub
+  </Card>
+  
+  <Card title="Python Changelog" icon="python" href="https://github.com/firebase/genkit/blob/main/py/CHANGELOG.md">
+    Detailed Python SDK changelog
+  </Card>
+</CardGroup>
+
+## Versioning Policy
+
+### Semantic Versioning
+
+Genkit follows [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH):
+
+- **MAJOR**: Breaking changes (e.g., 1.0.0 → 2.0.0)  
+- **MINOR**: New features, backward compatible (e.g., 1.0.0 → 1.1.0)
+- **PATCH**: Bug fixes, backward compatible (e.g., 1.0.0 → 1.0.1)
+
+### Alpha/Beta Releases
+
+- **Alpha**: Early development, APIs may change (Python SDK)
+- **Beta**: Feature complete, API stabilizing
+- **Stable**: Production-ready (JavaScript, Go SDKs)
+
+### LTS and Support
+
+- **Active development**: Latest major version
+- **Security updates**: Latest major version
+- **Bug fixes**: Latest minor version
+- **Deprecation policy**: 6 months notice before removing features
+
+## Stay Updated
+
+### Get Notifications
+
+<CardGroup cols={2}>
+  <Card title="Watch on GitHub" icon="github">
+    Watch the repository for release notifications
+  </Card>
+  
+  <Card title="Discord Announcements" icon="discord">
+    Join Discord for update announcements  
+  </Card>
+  
+  <Card title="RSS Feed" icon="rss">
+    Subscribe to GitHub releases RSS
+  </Card>
+  
+  <Card title="Twitter" icon="twitter">
+    Follow updates with #GenkitAI
+  </Card>
+</CardGroup>
+
+### Release Schedule
+
+- **Python SDK**: Frequent alpha releases during active development
+- **JavaScript SDK**: Regular minor releases with new features
+- **Go SDK**: Regular minor releases with new features  
+- **Security patches**: Released as needed for all SDKs
+
+## Feedback
+
+Your feedback helps shape Genkit's future:
+
+- **Feature requests**: [GitHub Discussions](https://github.com/firebase/genkit/discussions)
+- **Bug reports**: [GitHub Issues](https://github.com/firebase/genkit/issues)
+- **General feedback**: [Discord](https://discord.gg/qXt5zzQKpc)
+
+---
+
+<Info>
+  **Questions about a release?** Ask on [Discord](https://discord.gg/qXt5zzQKpc) or check [GitHub Discussions](https://github.com/firebase/genkit/discussions).
+</Info>

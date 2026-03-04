@@ -1,0 +1,578 @@
+---
+title: OpenAI-Compatible APIs
+description: Connect to OpenAI, xAI, DeepSeek, and any OpenAI-compatible service
+---
+
+The OpenAI-compatible plugin allows you to connect to OpenAI, xAI (Grok), DeepSeek, and any other service that implements the OpenAI API specification. This gives you maximum flexibility to work with different providers using a consistent interface.
+
+## Installation
+
+```bash
+npm install @genkit-ai/compat-oai
+```
+
+## Supported Providers
+
+### OpenAI
+
+Access GPT-4o, o1, o3, DALL-E, Whisper, and more.
+
+### xAI (Grok)
+
+Use Grok models from xAI.
+
+### DeepSeek
+
+Access DeepSeek's reasoning models.
+
+### Custom OpenAI-Compatible APIs
+
+Connect to any service implementing the OpenAI API:
+- Local inference servers (vLLM, TGI, LocalAI)
+- Cloud providers offering OpenAI-compatible endpoints
+- Self-hosted model APIs
+
+## Setup
+
+### OpenAI
+
+```typescript
+import { genkit } from 'genkit';
+import openAI, { gpt4o, gpt35Turbo } from '@genkit-ai/compat-oai';
+
+const ai = genkit({
+  plugins: [
+    openAI({ apiKey: process.env.OPENAI_API_KEY }),
+  ],
+  model: gpt4o, // Optional default model
+});
+```
+
+**Get an API Key:**
+1. Sign up at [OpenAI Platform](https://platform.openai.com/)
+2. Navigate to API Keys
+3. Create a new key
+4. Set environment variable:
+
+```bash
+export OPENAI_API_KEY=your-api-key
+```
+
+### xAI (Grok)
+
+```typescript
+import { genkit } from 'genkit';
+import { xai } from '@genkit-ai/compat-oai';
+
+const ai = genkit({
+  plugins: [
+    xai({ apiKey: process.env.XAI_API_KEY }),
+  ],
+});
+```
+
+### DeepSeek
+
+```typescript
+import { genkit } from 'genkit';
+import { deepseek } from '@genkit-ai/compat-oai';
+
+const ai = genkit({
+  plugins: [
+    deepseek({ apiKey: process.env.DEEPSEEK_API_KEY }),
+  ],
+});
+```
+
+### Custom OpenAI-Compatible API
+
+```typescript
+import { genkit, z } from 'genkit';
+import { openAICompatible } from '@genkit-ai/compat-oai';
+import { GenerationCommonConfigSchema } from 'genkit';
+import { ModelInfo } from 'genkit/model';
+
+const modelInfo: ModelInfo = {
+  label: 'Custom Model - My LLM',
+  supports: {
+    multiturn: true,
+    tools: true,
+    media: false,
+    systemRole: true,
+    output: ['json', 'text'],
+  },
+};
+
+const ai = genkit({
+  plugins: [
+    openAICompatible({
+      name: 'custom-provider',
+      apiKey: process.env.CUSTOM_API_KEY,
+      baseURL: 'https://api.custom-provider.com/v1',
+      models: [
+        { 
+          name: 'my-model-v1', 
+          info: modelInfo,
+          configSchema: GenerationCommonConfigSchema,
+        },
+      ],
+    }),
+  ],
+});
+```
+
+## Available Models
+
+### OpenAI Models
+
+**GPT-5 Series (Latest):**
+- `gpt-5` - Latest GPT-5 model
+- `gpt-5-mini` - Smaller, faster GPT-5
+- `gpt-5.1` - Enhanced GPT-5
+
+**GPT-4.5 Series:**
+- `gpt-4.5` - Latest GPT-4.5
+- `gpt-4.5-preview` - Preview version
+
+**GPT-4o Series:**
+- `gpt-4o` - Multimodal flagship
+- `gpt-4o-mini` - Faster, cost-effective
+
+**Reasoning Models:**
+- `o1` - Advanced reasoning
+- `o3` - Latest reasoning model
+- `o3-mini` - Lightweight reasoning
+- `o4-mini` - Enhanced mini reasoning
+
+**GPT-4 Series:**
+- `gpt-4-turbo` - Fast GPT-4
+- `gpt-4` - Original GPT-4
+- `gpt-4-vision` - Vision-enabled
+
+**GPT-3.5 Series:**
+- `gpt-3.5-turbo` - Fast and affordable
+
+All GPT models support:
+- Multi-turn conversations
+- Function calling
+- System messages
+- JSON mode (most models)
+- Streaming
+
+### OpenAI Modalities
+
+**Image Generation:**
+- `dall-e-3` - Latest DALL-E
+- `dall-e-2` - Previous version
+
+**Speech-to-Text:**
+- `whisper-1` - Speech transcription
+
+**Text-to-Speech:**
+- `tts-1` - Standard quality
+- `tts-1-hd` - High definition
+
+**Embeddings:**
+- `text-embedding-3-large` - 3072 dimensions
+- `text-embedding-3-small` - 1536 dimensions
+- `text-embedding-ada-002` - Legacy model
+
+## Usage Examples
+
+### Basic Text Generation (OpenAI)
+
+```typescript
+import { genkit } from 'genkit';
+import openAI, { gpt4o } from '@genkit-ai/compat-oai';
+
+const ai = genkit({
+  plugins: [openAI({ apiKey: process.env.OPENAI_API_KEY })],
+});
+
+const response = await ai.generate({
+  model: gpt4o,
+  prompt: 'Explain machine learning in simple terms.',
+});
+
+console.log(response.text());
+```
+
+### Multimodal Input (Vision)
+
+```typescript
+const response = await ai.generate({
+  model: gpt4o,
+  prompt: [
+    { text: 'What\'s in this image?' },
+    { media: { url: imageUrl } },
+  ],
+  config: {
+    visualDetailLevel: 'high', // 'low' | 'high'
+  },
+});
+
+console.log(response.text());
+```
+
+<Note>
+Use `visualDetailLevel: 'low'` to reduce token usage for simple images.
+</Note>
+
+### Function Calling
+
+```typescript
+import { z } from 'genkit';
+
+const createReminder = ai.defineTool(
+  {
+    name: 'createReminder',
+    description: 'Create a reminder for the future',
+    inputSchema: z.object({
+      time: z.string().describe('ISO timestamp, e.g. 2024-04-03T12:23:00Z'),
+      reminder: z.string().describe('Reminder content'),
+    }),
+    outputSchema: z.number().describe('Reminder ID'),
+  },
+  async ({ time, reminder }) => {
+    // Save to database
+    return 123;
+  }
+);
+
+const response = await ai.generate({
+  model: gpt4o,
+  tools: [createReminder],
+  prompt: 'Remind me to call John tomorrow at 3pm',
+});
+
+console.log(response.text());
+```
+
+### Streaming Responses
+
+```typescript
+const { response, stream } = await ai.generateStream({
+  model: gpt4o,
+  prompt: 'Write a long essay about artificial intelligence.',
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text());
+}
+```
+
+### Image Generation (DALL-E)
+
+```typescript
+import { dalle3 } from '@genkit-ai/compat-oai';
+
+const response = await ai.generate({
+  model: dalle3,
+  prompt: 'A futuristic city with flying cars, digital art style',
+  config: {
+    size: '1024x1024', // '1024x1024' | '1792x1024' | '1024x1792'
+    quality: 'hd',      // 'standard' | 'hd'
+    style: 'vivid',     // 'vivid' | 'natural'
+  },
+});
+
+const image = response.media();
+console.log('Image URL:', image?.url);
+```
+
+### Text-to-Speech
+
+```typescript
+import { tts1 } from '@genkit-ai/compat-oai';
+
+const response = await ai.generate({
+  model: tts1,
+  prompt: 'Hello, this is a test of text to speech.',
+  config: {
+    voice: 'alloy', // 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+    speed: 1.0,     // 0.25 to 4.0
+  },
+});
+
+const audio = response.media();
+console.log('Audio URL:', audio?.url);
+```
+
+### Speech-to-Text (Whisper)
+
+```typescript
+import { whisper1 } from '@genkit-ai/compat-oai';
+
+const response = await ai.generate({
+  model: whisper1,
+  prompt: [
+    { media: { url: 'path/to/audio.mp3' } },
+  ],
+  config: {
+    language: 'en', // Optional: specify language
+  },
+});
+
+console.log('Transcription:', response.text());
+```
+
+### Text Embeddings
+
+```typescript
+import { textEmbedding3Large } from '@genkit-ai/compat-oai';
+
+const embedding = await ai.embed({
+  embedder: textEmbedding3Large,
+  content: 'Genkit is an AI framework',
+});
+
+console.log(embedding); // 3072-dimensional vector
+```
+
+### JSON Output Mode
+
+```typescript
+import { z } from 'genkit';
+
+const response = await ai.generate({
+  model: gpt4o,
+  prompt: 'List 3 colors with their hex codes',
+  output: {
+    schema: z.object({
+      colors: z.array(z.object({
+        name: z.string(),
+        hex: z.string(),
+      })),
+    }),
+  },
+});
+
+console.log(response.output());
+// { colors: [{ name: 'red', hex: '#FF0000' }, ...] }
+```
+
+### Using Custom Model
+
+```typescript
+const response = await ai.generate({
+  model: 'custom-provider/my-model-v1',
+  prompt: 'Test the custom model',
+});
+```
+
+## Configuration Examples
+
+### Using Anthropic via OpenAI-Compatible API
+
+Some providers offer OpenAI-compatible endpoints:
+
+```typescript
+import { genkit, z } from 'genkit';
+import { openAICompatible } from '@genkit-ai/compat-oai';
+import { GenerationCommonConfigSchema } from 'genkit';
+import { ModelInfo } from 'genkit/model';
+
+const modelInfo: ModelInfo = {
+  label: 'Claude - Claude 3.7 Sonnet',
+  supports: {
+    multiturn: true,
+    tools: true,
+    media: false,
+    systemRole: true,
+    output: ['json', 'text'],
+  },
+};
+
+const ai = genkit({
+  plugins: [
+    openAICompatible({
+      name: 'anthropic-compat',
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      baseURL: 'https://api.anthropic.com/v1/',
+      models: [
+        { 
+          name: 'claude-3-7-sonnet',
+          info: modelInfo,
+          configSchema: GenerationCommonConfigSchema,
+        },
+      ],
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: 'anthropic-compat/claude-3-7-sonnet',
+  prompt: 'Hello!',
+  config: {
+    version: 'claude-3-7-sonnet-20250219',
+  },
+});
+```
+
+### Local Model Server (vLLM, Ollama with OpenAI API)
+
+```typescript
+import { openAICompatible } from '@genkit-ai/compat-oai';
+
+const ai = genkit({
+  plugins: [
+    openAICompatible({
+      name: 'local-llm',
+      apiKey: 'not-needed', // Some local servers don't require auth
+      baseURL: 'http://localhost:8000/v1',
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: 'local-llm/llama-3-70b',
+  prompt: 'Test local model',
+});
+```
+
+## Model Configuration
+
+### Common Parameters
+
+```typescript
+const response = await ai.generate({
+  model: gpt4o,
+  prompt: 'Generate creative text',
+  config: {
+    temperature: 0.7,         // Randomness (0.0 - 2.0)
+    topP: 0.9,                 // Nucleus sampling
+    maxOutputTokens: 2048,     // Max response length
+    stopSequences: ['END'],    // Stop sequences
+    frequencyPenalty: 0.5,     // Reduce repetition (-2.0 to 2.0)
+    presencePenalty: 0.3,      // Encourage new topics (-2.0 to 2.0)
+  },
+});
+```
+
+### OpenAI-Specific Configuration
+
+```typescript
+const response = await ai.generate({
+  model: gpt4o,
+  prompt: 'Test',
+  config: {
+    store: true, // Store for OpenAI's usage policy
+  },
+});
+```
+
+## Model Selection Guide
+
+### When to Use Each Model
+
+**gpt-5** / **gpt-4.5**:
+- Latest capabilities
+- Most advanced reasoning
+- Best for complex tasks
+
+**gpt-4o**:
+- Multimodal (text + images)
+- Strong general performance
+- Balanced speed and quality
+
+**gpt-4o-mini**:
+- Fast and affordable
+- Good for most tasks
+- Best value
+
+**o1** / **o3**:
+- Advanced reasoning
+- Mathematical proofs
+- Complex problem solving
+- Longer thinking time
+
+**gpt-3.5-turbo**:
+- Simple tasks
+- High volume
+- Budget-conscious
+
+## Troubleshooting
+
+### API Key Not Found
+
+```
+Error: The apiKey field is required
+```
+
+**Solution:**
+
+```bash
+export OPENAI_API_KEY=your-api-key
+```
+
+### Rate Limiting
+
+```
+Error: Rate limit exceeded
+```
+
+**Solution:** Implement exponential backoff:
+
+```typescript
+import { retry } from 'genkit/retry';
+
+const response = await retry(
+  () => ai.generate({ model: gpt4o, prompt: 'Test' }),
+  { maxRetries: 3, backoff: 'exponential' }
+);
+```
+
+### Model Not Found
+
+```
+Error: The model `xyz` does not exist
+```
+
+**Solution:** Use a valid model name from the supported models list.
+
+### Context Length Exceeded
+
+```
+Error: maximum context length is XXX tokens
+```
+
+**Solution:** Reduce prompt size or use a model with larger context:
+- GPT-4o: 128K tokens
+- GPT-4 Turbo: 128K tokens
+- o1: 200K tokens
+
+## Best Practices
+
+1. **Use environment variables** for API keys
+2. **Choose the right model** - use mini models for simple tasks
+3. **Implement retry logic** for production
+4. **Monitor token usage** to control costs
+5. **Use streaming** for better user experience
+6. **Set appropriate max tokens** to prevent runaway costs
+7. **Cache embeddings** to avoid redundant API calls
+
+## Pricing
+
+OpenAI pricing varies by model. As of latest updates:
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| GPT-4o | $2.50 | $10.00 |
+| GPT-4o Mini | $0.15 | $0.60 |
+| GPT-3.5 Turbo | $0.50 | $1.50 |
+| o1 | $15.00 | $60.00 |
+
+See [OpenAI Pricing](https://openai.com/pricing) for current rates.
+
+**Cost Optimization:**
+- Use `gpt-4o-mini` for most tasks
+- Set `maxOutputTokens` to limit costs
+- Use prompt caching when available
+- Batch requests when possible
+
+## Next Steps
+
+- [OpenAI Documentation](https://platform.openai.com/docs)
+- [Prompt Engineering](/concepts/prompts)
+- [Building Flows](/concepts/flows)
+- [RAG with Embeddings](/guides/rag)

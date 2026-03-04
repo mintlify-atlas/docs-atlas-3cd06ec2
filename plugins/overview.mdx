@@ -1,0 +1,158 @@
+---
+title: 'Plugins Overview'
+description: 'Learn about Genkit plugins and how to extend the framework with custom capabilities'
+---
+
+# Plugins Overview
+
+Genkit plugins extend the framework with additional capabilities like model providers, vector stores, telemetry, and integrations. Plugins provide a standardized way to add new models, embedders, retrievers, indexers, and other components to your Genkit application.
+
+## What are Plugins?
+
+Plugins in Genkit are modular extensions that:
+
+- **Provide models** from various AI providers (Google AI, Anthropic, OpenAI, etc.)
+- **Add vector stores** for retrieval-augmented generation (RAG)
+- **Enable telemetry** and monitoring capabilities
+- **Integrate frameworks** like Express, Firebase, and Next.js
+- **Extend functionality** with custom embedders, evaluators, and more
+
+## Plugin Categories
+
+### Model Providers
+
+Model provider plugins give you access to AI models from different vendors:
+
+- **[@genkit-ai/google-genai](/plugins/google-genai)** - Google AI (Gemini) and Vertex AI models
+- **[@genkit-ai/anthropic](/plugins/anthropic)** - Claude models (Haiku, Sonnet, Opus)
+- **[genkitx-ollama](/plugins/ollama)** - Local models via Ollama
+- **@genkit-ai/compat-oai** - OpenAI-compatible models
+
+### Vector Stores
+
+Vector store plugins enable RAG with various vector databases:
+
+- **[genkitx-chroma](/plugins/chroma)** - ChromaDB vector store
+- **[genkitx-pinecone](/plugins/pinecone)** - Pinecone vector database
+- **@genkit-ai/dev-local-vectorstore** - Local development vector store
+- **@genkit-ai/cloud-sql-pg** - Google Cloud SQL PostgreSQL with pgvector
+
+### Framework Integrations
+
+Integration plugins connect Genkit with popular frameworks:
+
+- **[@genkit-ai/express](/plugins/express)** - Express.js HTTP endpoints
+- **[@genkit-ai/firebase](/plugins/firebase)** - Firebase deployment and telemetry
+- **@genkit-ai/next** - Next.js integration
+
+### Telemetry & Monitoring
+
+- **[@genkit-ai/firebase](/plugins/firebase)** - Firebase telemetry and monitoring
+- **@genkit-ai/google-cloud** - Google Cloud operations
+
+## Installation and Usage
+
+### Installing Plugins
+
+Install plugins using your package manager:
+
+```bash
+npm install @genkit-ai/google-genai
+npm install @genkit-ai/anthropic
+npm install genkitx-ollama
+```
+
+### Basic Configuration
+
+Plugins are configured when initializing Genkit:
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+  ],
+});
+```
+
+### Using Plugin Resources
+
+Once configured, use models and other resources from plugins:
+
+```typescript
+// Using a Google AI model
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Tell me about Genkit plugins',
+});
+
+// Using an Anthropic model
+const response2 = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Explain AI plugins',
+});
+```
+
+## Plugin API
+
+Plugins implement the `GenkitPlugin` interface:
+
+```typescript
+export interface PluginProvider {
+  name: string;
+  initializer: () =>
+    | InitializedPlugin
+    | void
+    | Promise<InitializedPlugin | void>;
+  resolver?: (action: ActionType, target: string) => Promise<void>;
+  listActions?: () => Promise<ActionMetadata[]>;
+}
+
+export interface InitializedPlugin {
+  models?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  retrievers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  embedders?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  indexers?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+  evaluators?: Action<z.ZodTypeAny, z.ZodTypeAny>[];
+}
+```
+
+## Official Plugins
+
+### Model Providers
+- `@genkit-ai/google-genai` - Google AI and Vertex AI (Gemini, Imagen, Lyria)
+- `@genkit-ai/anthropic` - Anthropic Claude models
+- `genkitx-ollama` - Local Ollama models
+- `@genkit-ai/compat-oai` - OpenAI-compatible models
+
+### Vector Stores
+- `genkitx-chroma` - ChromaDB
+- `genkitx-pinecone` - Pinecone
+- `@genkit-ai/dev-local-vectorstore` - Local development
+- `@genkit-ai/cloud-sql-pg` - Cloud SQL PostgreSQL
+
+### Integrations
+- `@genkit-ai/express` - Express.js
+- `@genkit-ai/firebase` - Firebase
+- `@genkit-ai/next` - Next.js
+- `@genkit-ai/google-cloud` - Google Cloud
+
+### Other
+- `@genkit-ai/evaluators` - AI evaluation tools
+- `@genkit-ai/checks` - Quality checks
+- `@genkit-ai/langchain` - LangChain integration
+- `@genkit-ai/mcp` - Model Context Protocol
+
+## Next Steps
+
+- Learn about specific plugins:
+  - [Google GenAI Plugin](/plugins/google-genai)
+  - [Anthropic Plugin](/plugins/anthropic)
+  - [Ollama Plugin](/plugins/ollama)
+- [Create your own plugin](/plugins/creating-plugins)
+- [Publish a plugin](/plugins/publishing)
+- [Plugin API Reference](/plugins/plugin-api)

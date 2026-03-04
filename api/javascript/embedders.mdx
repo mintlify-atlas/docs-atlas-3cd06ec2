@@ -1,0 +1,351 @@
+---
+title: Embedders API
+description: API reference for embedders in Genkit (JavaScript/TypeScript)
+---
+
+Embedders convert text and documents into vector embeddings for semantic search and retrieval.
+
+## defineEmbedder()
+
+Defines and registers an embedder.
+
+```typescript
+import { defineEmbedder } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const myEmbedder = defineEmbedder(
+  registry,
+  {
+    name: 'myEmbedder',
+    configSchema: z.object({
+      dimensions: z.number().optional(),
+    }),
+    info: {
+      label: 'My Custom Embedder',
+      dimensions: 768,
+      supports: {
+        input: ['text'],
+      },
+    },
+  },
+  async (input, options) => {
+    // Generate embeddings for each document
+    const embeddings = input.map(doc => ({
+      embedding: generateEmbedding(doc.text()),
+    }));
+    
+    return { embeddings };
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="options" type="EmbedderOptions<ConfigSchema>" required>
+  Embedder configuration
+  
+  <Expandable title="EmbedderOptions properties">
+    <ParamField path="name" type="string" required>
+      Unique name for the embedder
+    </ParamField>
+    
+    <ParamField path="configSchema" type="ZodTypeAny">
+      Zod schema for embedder-specific configuration options
+    </ParamField>
+    
+    <ParamField path="info" type="EmbedderInfo">
+      Metadata about the embedder's capabilities
+      
+      <Expandable title="EmbedderInfo properties">
+        <ParamField path="label" type="string">
+          Human-readable label for the embedder
+        </ParamField>
+        
+        <ParamField path="dimensions" type="number">
+          Embedding vector dimension size
+        </ParamField>
+        
+        <ParamField path="supports" type="object">
+          <ParamField path="input" type="Array<'text' | 'image' | 'video'>">
+            Supported input types
+          </ParamField>
+          
+          <ParamField path="multilingual" type="boolean">
+            Whether the embedder supports multiple languages
+          </ParamField>
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="runner" type="EmbedderFn<ConfigSchema>" required>
+  Implementation function
+  
+  **Function signature:**
+  ```typescript
+  (input: Document[], options?: z.infer<ConfigSchema>) => Promise<EmbedResponse>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="EmbedderAction" type="EmbedderAction<ConfigSchema>">
+  An embedder action that can be used with `embed()`
+</ResponseField>
+
+## embed()
+
+Generates embeddings for text or documents.
+
+```typescript
+import { embed } from '@genkit-ai/ai';
+
+const embeddings = await embed(registry, {
+  embedder: 'myEmbedder',
+  content: 'Hello, world!',
+});
+
+console.log(embeddings[0].embedding); // [0.123, 0.456, ...]
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="params" type="EmbedderParams<CustomOptions>" required>
+  Embedding request parameters
+  
+  <Expandable title="EmbedderParams properties">
+    <ParamField path="embedder" type="EmbedderArgument<CustomOptions>" required>
+      Embedder to use (string name, EmbedderAction, or EmbedderReference)
+    </ParamField>
+    
+    <ParamField path="content" type="string | DocumentData" required>
+      Text or document to embed
+    </ParamField>
+    
+    <ParamField path="metadata" type="Record<string, unknown>">
+      Metadata to attach to the document
+    </ParamField>
+    
+    <ParamField path="options" type="z.infer<CustomOptions>">
+      Embedder-specific configuration options
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="embeddings" type="Embedding[]">
+  Array of embedding objects
+  
+  ```typescript
+  {
+    embedding: number[];  // Vector representation
+    metadata?: Record<string, unknown>;
+  }
+  ```
+</ResponseField>
+
+## embedMany()
+
+Generates embeddings for multiple documents in a batch.
+
+```typescript
+import { embedMany } from '@genkit-ai/ai';
+
+const embeddings = await embedMany(registry, {
+  embedder: 'myEmbedder',
+  content: ['First document', 'Second document', 'Third document'],
+});
+
+console.log(embeddings.length); // 3
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="params" type="object" required>
+  <ParamField path="embedder" type="EmbedderArgument<ConfigSchema>" required>
+    Embedder to use
+  </ParamField>
+  
+  <ParamField path="content" type="string[] | DocumentData[]" required>
+    Array of texts or documents to embed
+  </ParamField>
+  
+  <ParamField path="metadata" type="Record<string, unknown>">
+    Metadata to attach to all documents
+  </ParamField>
+  
+  <ParamField path="options" type="z.infer<ConfigSchema>">
+    Embedder-specific options
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="embeddings" type="EmbeddingBatch">
+  Batch of embeddings
+  
+  ```typescript
+  type EmbeddingBatch = { embedding: number[] }[];
+  ```
+</ResponseField>
+
+## embedderRef()
+
+Creates a reference to an embedder with configuration.
+
+```typescript
+import { embedderRef } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const myEmbedderRef = embedderRef({
+  name: 'myEmbedder',
+  config: { dimensions: 512 },
+  info: {
+    label: 'My Embedder',
+    dimensions: 512,
+  },
+});
+
+// Use the reference
+const embeddings = await embed(registry, {
+  embedder: myEmbedderRef,
+  content: 'Hello',
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="EmbedderReference<CustomOptionsSchema>" required>
+  <ParamField path="name" type="string" required>
+    Embedder name
+  </ParamField>
+  
+  <ParamField path="configSchema" type="CustomOptionsSchema">
+    Configuration schema
+  </ParamField>
+  
+  <ParamField path="info" type="EmbedderInfo">
+    Embedder metadata
+  </ParamField>
+  
+  <ParamField path="config" type="z.infer<CustomOptionsSchema>">
+    Configuration values
+  </ParamField>
+  
+  <ParamField path="version" type="string">
+    Embedder version
+  </ParamField>
+  
+  <ParamField path="namespace" type="string">
+    Optional namespace prefix
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="reference" type="EmbedderReference<CustomOptionsSchema>">
+  An embedder reference that can be passed to `embed()`
+</ResponseField>
+
+## Types
+
+### EmbedRequest
+
+```typescript
+interface EmbedRequest<O = any> {
+  input: Document[];
+  options?: O;
+}
+```
+
+### EmbedResponse
+
+```typescript
+interface EmbedResponse {
+  embeddings: Embedding[];
+}
+```
+
+### Embedding
+
+```typescript
+interface Embedding {
+  embedding: number[];
+  metadata?: Record<string, unknown>;
+}
+```
+
+### EmbedderAction
+
+```typescript
+type EmbedderAction<CustomOptions extends z.ZodTypeAny = z.ZodTypeAny> = 
+  Action<typeof EmbedRequestSchema, typeof EmbedResponseSchema> & {
+    __configSchema?: CustomOptions;
+  };
+```
+
+## Example: Custom Embedder
+
+```typescript
+import { ai } from './genkit';
+import { Document } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const customEmbedder = ai.defineEmbedder(
+  {
+    name: 'custom/embedder',
+    configSchema: z.object({
+      model: z.string().default('base'),
+      batchSize: z.number().default(32),
+    }),
+    info: {
+      label: 'Custom Embedder',
+      dimensions: 768,
+      supports: {
+        input: ['text'],
+        multilingual: false,
+      },
+    },
+  },
+  async (documents, options) => {
+    const embeddings = [];
+    
+    // Process in batches
+    for (let i = 0; i < documents.length; i += options.batchSize) {
+      const batch = documents.slice(i, i + options.batchSize);
+      const batchEmbeddings = await generateEmbeddingsBatch(
+        batch.map(d => d.text()),
+        options.model
+      );
+      embeddings.push(...batchEmbeddings);
+    }
+    
+    return {
+      embeddings: embeddings.map((embedding, i) => ({
+        embedding,
+        metadata: documents[i].metadata,
+      })),
+    };
+  }
+);
+
+// Use the embedder
+const result = await ai.embed({
+  embedder: customEmbedder,
+  content: 'Sample text to embed',
+});
+```

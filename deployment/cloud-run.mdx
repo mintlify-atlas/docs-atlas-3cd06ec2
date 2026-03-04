@@ -1,0 +1,538 @@
+---
+title: Cloud Run Deployment
+description: Deploy containerized Genkit applications to Google Cloud Run
+---
+
+# Cloud Run Deployment
+
+Deploy Genkit applications to Google Cloud Run with automatic scaling, containerization, and support for all languages (JavaScript, Go, Python).
+
+## Overview
+
+Cloud Run provides:
+
+- **Fully managed** - Serverless container platform
+- **Any language** - JavaScript, Go, Python, or any container
+- **Automatic scaling** - Scale to zero when not in use
+- **Pay per use** - Only pay for actual request time
+- **Custom domains** - Map to your own domain
+
+## Prerequisites
+
+```bash
+# Install Google Cloud CLI
+curl https://sdk.cloud.google.com | bash
+
+# Login and set project
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+```
+
+## Node.js Deployment
+
+### 1. Create Express Server
+
+```typescript src/index.ts
+import { expressHandler, startFlowServer } from '@genkit-ai/express';
+import { googleAI } from '@genkit-ai/google-genai';
+import express from 'express';
+import { genkit, z } from 'genkit';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const jokeFlow = ai.defineFlow(
+  {
+    name: 'jokeFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (subject) => {
+    const result = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Tell me a joke about ${subject}`,
+    });
+    return result.text;
+  }
+);
+
+const app = express();
+app.use(express.json());
+
+// Health check for Cloud Run
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
+
+// Expose flow
+app.post('/joke', expressHandler(jokeFlow));
+
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+});
+```
+
+### 2. Create Dockerfile
+
+```dockerfile Dockerfile
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+RUN npm run build
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["node", "dist/index.js"]
+```
+
+### 3. Create .dockerignore
+
+```text .dockerignore
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+*.local
+dist
+build
+```
+
+### 4. Deploy to Cloud Run
+
+```bash
+# Build and deploy in one command
+gcloud run deploy genkit-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your-api-key
+
+# Or build separately
+gcloud builds submit --tag gcr.io/PROJECT_ID/genkit-app
+gcloud run deploy genkit-app \
+  --image gcr.io/PROJECT_ID/genkit-app \
+  --region us-central1
+```
+
+## Go Deployment
+
+### 1. Create Go Server
+
+```go main.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Initialize Genkit
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    // Define a flow
+    genkit.DefineFlow(g, "jokeFlow", 
+        func(ctx context.Context, input string) (string, error) {
+            if input == "" {
+                input = "programming"
+            }
+
+            return genkit.GenerateText(ctx, g,
+                ai.WithModelName("googleai/gemini-2.5-flash"),
+                ai.WithPrompt("Tell me a joke about %s.", input),
+            )
+        },
+    )
+
+    // Create HTTP server
+    mux := http.NewServeMux()
+
+    // Health check
+    mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status":"healthy"}`))
+    })
+
+    // Expose all flows as HTTP endpoints
+    for _, flow := range genkit.ListFlows(g) {
+        mux.HandleFunc("POST /"+flow.Name(), genkit.Handler(flow))
+    }
+
+    // Get port from environment (Cloud Run sets this)
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    addr := fmt.Sprintf(":%s", port)
+    log.Printf("Server listening on %s", addr)
+    log.Fatal(http.ListenAndServe(addr, mux))
+}
+```
+
+### 2. Create Dockerfile for Go
+
+```dockerfile Dockerfile
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /server .
+
+# Runtime stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder /server .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["./server"]
+```
+
+### 3. Deploy Go App
+
+```bash
+gcloud run deploy genkit-go-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your-api-key
+```
+
+## Python Deployment
+
+### 1. Create FastAPI Server
+
+```python main.py
+import os
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
+
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleAI
+
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model='googleai/gemini-2.0-flash',
+)
+
+app = FastAPI(title='Genkit App')
+
+class JokeRequest(BaseModel):
+    subject: str
+
+class JokeResponse(BaseModel):
+    text: str
+
+@app.get('/health')
+async def health():
+    return {'status': 'healthy'}
+
+@ai.flow()
+async def joke_flow(subject: str) -> str:
+    """Generate a joke about a subject."""
+    response = await ai.generate(
+        prompt=f'Tell me a joke about {subject}'
+    )
+    return response.text
+
+@app.post('/joke', response_model=JokeResponse)
+async def joke_endpoint(request: JokeRequest) -> JokeResponse:
+    result = await joke_flow(request.subject)
+    return JokeResponse(text=result)
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8080))
+    uvicorn.run(app, host='0.0.0.0', port=port)
+```
+
+### 2. Create requirements.txt
+
+```text requirements.txt
+fastapi
+uvicorn[standard]
+genkit
+genkit-plugin-google-genai
+```
+
+### 3. Create Dockerfile for Python
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["python", "main.py"]
+```
+
+### 4. Deploy Python App
+
+```bash
+gcloud run deploy genkit-python-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your-api-key
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# Set environment variables
+gcloud run deploy genkit-app \
+  --set-env-vars GEMINI_API_KEY=your-key \
+  --set-env-vars LOG_LEVEL=info
+
+# Or use Secret Manager
+gcloud run deploy genkit-app \
+  --update-secrets GEMINI_API_KEY=genkit-api-key:latest
+```
+
+### Memory and CPU
+
+```bash
+gcloud run deploy genkit-app \
+  --memory 2Gi \
+  --cpu 2 \
+  --timeout 300s  # 5 minutes
+```
+
+### Concurrency and Autoscaling
+
+```bash
+gcloud run deploy genkit-app \
+  --concurrency 80 \
+  --min-instances 1 \
+  --max-instances 100
+```
+
+### Custom Domain
+
+```bash
+# Map to your domain
+gcloud run domain-mappings create \
+  --service genkit-app \
+  --domain api.yourdomain.com \
+  --region us-central1
+```
+
+## Authentication
+
+### Require Authentication
+
+```bash
+# Deploy with authentication required
+gcloud run deploy genkit-app \
+  --no-allow-unauthenticated
+
+# Call with authentication
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  https://genkit-app-xxx.run.app/joke
+```
+
+### Service Account
+
+```bash
+# Create service account
+gcloud iam service-accounts create genkit-service
+
+# Grant permissions
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:genkit-service@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+
+# Deploy with service account
+gcloud run deploy genkit-app \
+  --service-account genkit-service@PROJECT_ID.iam.gserviceaccount.com
+```
+
+## Monitoring
+
+### View Logs
+
+```bash
+# Stream logs
+gcloud run services logs tail genkit-app \
+  --region us-central1
+
+# View in Cloud Console
+echo "https://console.cloud.google.com/run/detail/us-central1/genkit-app/logs"
+```
+
+### Enable Tracing
+
+```typescript
+import { enableGoogleCloudTelemetry } from '@genkit-ai/google-cloud';
+
+enableGoogleCloudTelemetry({
+  projectId: 'your-project-id',
+});
+```
+
+## Testing
+
+### Test Deployed Service
+
+```bash
+# Get service URL
+SERVICE_URL=$(gcloud run services describe genkit-app \
+  --region us-central1 \
+  --format 'value(status.url)')
+
+# Test health check
+curl $SERVICE_URL/health
+
+# Test flow
+curl -X POST $SERVICE_URL/joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": "programming"}'
+```
+
+### Load Testing
+
+```bash
+# Install Apache Bench
+sudo apt-get install apache2-utils
+
+# Run load test
+ab -n 100 -c 10 -p data.json -T application/json \
+  $SERVICE_URL/joke
+```
+
+## Multi-Region Deployment
+
+Deploy to multiple regions for lower latency:
+
+```bash
+# Deploy to multiple regions
+for region in us-central1 europe-west1 asia-east1; do
+  gcloud run deploy genkit-app \
+    --region $region \
+    --source .
+done
+
+# Use Cloud Load Balancer for global routing
+gcloud compute backend-services create genkit-backend \
+  --global \
+  --load-balancing-scheme=EXTERNAL
+```
+
+## Cost Optimization
+
+### Scale to Zero
+
+```bash
+# Allow scaling to zero (default)
+gcloud run deploy genkit-app \
+  --min-instances 0
+```
+
+### CPU Allocation
+
+```bash
+# Only allocate CPU during request processing
+gcloud run deploy genkit-app \
+  --cpu-throttling  # Default
+
+# Keep CPU always allocated (faster response, higher cost)
+gcloud run deploy genkit-app \
+  --no-cpu-throttling
+```
+
+## Troubleshooting
+
+### Container Fails to Start
+
+**Problem:** Service deployment fails.
+
+**Solution:** Check logs:
+
+```bash
+gcloud run services logs read genkit-app \
+  --region us-central1 \
+  --limit 50
+```
+
+### Timeout Errors
+
+**Problem:** Requests timeout.
+
+**Solution:** Increase timeout:
+
+```bash
+gcloud run deploy genkit-app \
+  --timeout 540s  # Max 60 minutes for 2nd gen
+```
+
+### Out of Memory
+
+**Problem:** Container crashes with OOM.
+
+**Solution:** Increase memory:
+
+```bash
+gcloud run deploy genkit-app \
+  --memory 4Gi
+```
+
+## Best Practices
+
+1. **Use health checks** - Cloud Run uses `/` by default, add a dedicated endpoint
+2. **Set appropriate timeouts** - AI operations need longer timeouts than default
+3. **Enable tracing** - Use Cloud Trace for debugging
+4. **Use secrets** - Store API keys in Secret Manager, not environment variables
+5. **Implement graceful shutdown** - Handle SIGTERM signals
+6. **Monitor costs** - Set up billing alerts
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Express Plugin" icon="node-js" href="/plugins/express">
+    Learn about Express.js integration
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/observability">
+    Set up Cloud Trace and monitoring
+  </Card>
+</CardGroup>

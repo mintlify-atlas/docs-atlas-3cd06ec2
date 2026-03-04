@@ -1,0 +1,602 @@
+---
+title: Go Deployment
+description: Deploy Genkit Go applications with HTTP servers
+---
+
+# Go Deployment
+
+Deploy high-performance Genkit applications written in Go. Build standalone HTTP servers with minimal resource usage and maximum throughput.
+
+## Overview
+
+Genkit Go provides:
+
+- **Native performance** - Compiled binaries, no runtime overhead
+- **Small footprint** - Minimal memory and CPU usage
+- **Standard library** - Built on `net/http`, works with any Go HTTP framework
+- **Single binary** - Self-contained executable
+
+## Installation
+
+```bash
+go get github.com/firebase/genkit/go
+```
+
+## Basic Server
+
+### 1. Create main.go
+
+```go main.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Initialize Genkit
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    // Define a flow
+    genkit.DefineFlow(g, "jokeFlow", 
+        func(ctx context.Context, input string) (string, error) {
+            if input == "" {
+                input = "programming"
+            }
+
+            return genkit.GenerateText(ctx, g,
+                ai.WithModelName("googleai/gemini-2.5-flash"),
+                ai.WithPrompt("Tell me a joke about %s.", input),
+            )
+        },
+    )
+
+    // Create HTTP server
+    mux := http.NewServeMux()
+
+    // Health check
+    mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status":"healthy"}`))
+    })
+
+    // Expose all flows as HTTP endpoints
+    for _, flow := range genkit.ListFlows(g) {
+        mux.HandleFunc("POST /"+flow.Name(), genkit.Handler(flow))
+    }
+
+    // Get port from environment (Cloud Run, Heroku, etc.)
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    addr := fmt.Sprintf(":%s", port)
+    log.Printf("Server listening on %s", addr)
+    log.Fatal(http.ListenAndServe(addr, mux))
+}
+```
+
+### 2. Initialize Go Module
+
+```bash
+go mod init myapp
+go mod tidy
+```
+
+### 3. Run Locally
+
+```bash
+# Set API key
+export GEMINI_API_KEY=your-api-key
+
+# Run server
+go run .
+
+# Test endpoint
+curl -X POST http://localhost:8080/jokeFlow \
+  -H "Content-Type: application/json" \
+  -d '{"data": "bananas"}'
+```
+
+## Streaming Flows
+
+Define flows that stream responses:
+
+```go
+genkit.DefineStreamingFlow(g, "streamingJokes",
+    func(ctx context.Context, input string, sendChunk ai.ModelStreamCallback) (string, error) {
+        if input == "" {
+            input = "programming"
+        }
+
+        resp, err := genkit.Generate(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Tell me 3 jokes about %s.", input),
+            ai.WithStreaming(sendChunk),
+        )
+        if err != nil {
+            return "", fmt.Errorf("generation failed: %w", err)
+        }
+
+        return resp.Text(), nil
+    },
+)
+```
+
+Test streaming:
+
+```bash
+curl -N -X POST http://localhost:8080/streamingJokes \
+  -H "Content-Type: application/json" \
+  -d '{"data": "cats"}'
+```
+
+## Advanced Features
+
+### Using Model References
+
+Configure provider-specific options:
+
+```go
+import "google.golang.org/genai"
+
+resp, err := genkit.Generate(ctx, g,
+    ai.WithModel(googlegenai.ModelRef("googleai/gemini-2.5-flash", &genai.GenerateContentConfig{
+        Temperature:     genai.Ptr(float32(0.7)),
+        MaxOutputTokens: genai.Ptr(int32(1000)),
+        TopP:            genai.Ptr(float32(0.9)),
+    })),
+    ai.WithPrompt("Write a story about %s", topic),
+)
+```
+
+### Structured Output
+
+```go
+type Recipe struct {
+    Title       string   `json:"title"`
+    Ingredients []string `json:"ingredients"`
+    Steps       []string `json:"steps"`
+}
+
+recipe, err := genkit.GenerateData[Recipe](ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Create a recipe for %s.", dish),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Recipe: %s\n", recipe.Title)
+```
+
+### Streaming Structured Data
+
+```go
+type Ingredient struct {
+    Name   string `json:"name"`
+    Amount string `json:"amount"`
+}
+
+type Recipe struct {
+    Title       string        `json:"title"`
+    Ingredients []*Ingredient `json:"ingredients"`
+}
+
+stream := genkit.GenerateDataStream[*Recipe](ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("Create a recipe for %s.", dish),
+)
+
+for result, err := range stream {
+    if err != nil {
+        log.Fatal(err)
+    }
+    if result.Done {
+        fmt.Printf("\nComplete: %s\n", result.Output.Title)
+        break
+    }
+    // Access partial data as it streams
+    if result.Chunk != nil && len(result.Chunk.Ingredients) > 0 {
+        fmt.Printf("Found: %s\n", result.Chunk.Ingredients[0].Name)
+    }
+}
+```
+
+### Tools
+
+```go
+type WeatherInput struct {
+    Location string `json:"location"`
+}
+
+weatherTool := genkit.DefineTool(g, "getWeather",
+    "Gets current weather for a location",
+    func(ctx *ai.ToolContext, input WeatherInput) (string, error) {
+        // Call weather API
+        return fmt.Sprintf("Weather in %s: 72°F, sunny", input.Location), nil
+    },
+)
+
+response, err := genkit.Generate(ctx, g,
+    ai.WithModelName("googleai/gemini-2.5-flash"),
+    ai.WithPrompt("What's the weather in San Francisco?"),
+    ai.WithTools(weatherTool),
+)
+```
+
+## HTTP Frameworks
+
+### Standard Library (net/http)
+
+Genkit works seamlessly with the standard library:
+
+```go
+mux := http.NewServeMux()
+mux.HandleFunc("POST /joke", genkit.Handler(jokeFlow))
+log.Fatal(http.ListenAndServe(":8080", mux))
+```
+
+### Gin
+
+```go
+import "github.com/gin-gonic/gin"
+
+r := gin.Default()
+r.POST("/joke", gin.WrapF(genkit.Handler(jokeFlow)))
+r.Run(":8080")
+```
+
+### Echo
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+e.POST("/joke", echo.WrapHandler(genkit.Handler(jokeFlow)))
+e.Start(":8080")
+```
+
+### Chi
+
+```go
+import "github.com/go-chi/chi/v5"
+
+r := chi.NewRouter()
+r.Post("/joke", genkit.Handler(jokeFlow))
+http.ListenAndServe(":8080", r)
+```
+
+### Frameworks with Error Handling
+
+Use `genkit.HandlerFunc` for frameworks that support error-returning handlers:
+
+```go
+import "github.com/labstack/echo/v4"
+
+e := echo.New()
+h := genkit.HandlerFunc(jokeFlow)
+
+e.POST("/joke", func(c echo.Context) error {
+    return h(c.Response(), c.Request())
+})
+
+e.Start(":8080")
+```
+
+## Build and Deployment
+
+### Build Binary
+
+```bash
+# Build for current platform
+go build -o server .
+
+# Build for Linux (for Cloud Run, etc.)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server .
+
+# Optimized build (smaller binary)
+go build -ldflags="-s -w" -o server .
+```
+
+### Dockerfile
+
+```dockerfile Dockerfile
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server .
+
+# Runtime stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder /app/server .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["./server"]
+```
+
+Build and run:
+
+```bash
+# Build image
+docker build -t genkit-app .
+
+# Run container
+docker run -p 8080:8080 \
+  -e GEMINI_API_KEY=your-key \
+  genkit-app
+```
+
+### Deploy to Cloud Run
+
+```bash
+# Deploy directly from source
+gcloud run deploy genkit-go-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your-key
+
+# Or build and push image
+docker build -t gcr.io/PROJECT_ID/genkit-app .
+docker push gcr.io/PROJECT_ID/genkit-app
+
+gcloud run deploy genkit-go-app \
+  --image gcr.io/PROJECT_ID/genkit-app \
+  --region us-central1
+```
+
+### Deploy to Fly.io
+
+```toml fly.toml
+app = "genkit-go-app"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+```
+
+```bash
+flyctl launch
+flyctl secrets set GEMINI_API_KEY=your-key
+flyctl deploy
+```
+
+### Deploy to AWS
+
+```bash
+# Build for Linux
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server .
+
+# Create zip for Lambda
+zip function.zip server
+
+# Upload to S3 or deploy directly
+aws lambda create-function \
+  --function-name genkit-app \
+  --runtime provided.al2 \
+  --handler server \
+  --zip-file fileb://function.zip
+```
+
+## Production Best Practices
+
+### 1. Graceful Shutdown
+
+```go
+import (
+    "context"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+)
+
+func main() {
+    // ... setup code ...
+
+    srv := &http.Server{
+        Addr:    ":8080",
+        Handler: mux,
+    }
+
+    // Start server
+    go func() {
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatalf("Server error: %v", err)
+        }
+    }()
+
+    // Wait for interrupt signal
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+
+    log.Println("Shutting down server...")
+
+    // Graceful shutdown with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    if err := srv.Shutdown(ctx); err != nil {
+        log.Fatal("Server forced to shutdown:", err)
+    }
+
+    log.Println("Server exited")
+}
+```
+
+### 2. Timeouts
+
+```go
+srv := &http.Server{
+    Addr:         ":8080",
+    Handler:      mux,
+    ReadTimeout:  15 * time.Second,
+    WriteTimeout: 300 * time.Second, // Long timeout for AI
+    IdleTimeout:  60 * time.Second,
+}
+```
+
+### 3. Structured Logging
+
+```go
+import "log/slog"
+
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+mux.HandleFunc("POST /joke", func(w http.ResponseWriter, r *http.Request) {
+    start := time.Now()
+    genkit.Handler(jokeFlow)(w, r)
+    logger.Info("Request completed",
+        "method", r.Method,
+        "path", r.URL.Path,
+        "duration", time.Since(start),
+    )
+})
+```
+
+### 4. Health Checks
+
+```go
+mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "status": "healthy",
+        "uptime": time.Since(startTime).Seconds(),
+    })
+})
+```
+
+### 5. Middleware
+
+```go
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        next.ServeHTTP(w, r)
+        log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+    })
+}
+
+mux.Handle("/", loggingMiddleware(handler))
+```
+
+## Complete Examples
+
+See full Go examples in the repository:
+
+```bash
+# Basic flows
+cd go/samples/basic
+go run .
+
+# Structured data
+cd go/samples/basic-structured
+go run .
+
+# Prompts
+cd go/samples/basic-prompts
+go run .
+```
+
+## Performance Tips
+
+1. **Use connection pooling** - HTTP clients reuse connections by default
+2. **Enable HTTP/2** - Automatically enabled in Go 1.6+
+3. **Set appropriate buffer sizes** - For large responses
+4. **Use context for cancellation** - Pass request context to Genkit calls
+5. **Profile your app** - Use `pprof` to identify bottlenecks
+
+```go
+import _ "net/http/pprof"
+
+go func() {
+    log.Println(http.ListenAndServe("localhost:6060", nil))
+}()
+```
+
+## Troubleshooting
+
+### Missing API Key
+
+**Problem:** `googlegenai: API key not found`
+
+**Solution:** Set environment variable:
+
+```bash
+export GEMINI_API_KEY=your-key
+# Or
+export GOOGLE_API_KEY=your-key
+```
+
+### Port Already in Use
+
+**Problem:** `bind: address already in use`
+
+**Solution:** Change port or kill existing process:
+
+```bash
+lsof -ti:8080 | xargs kill -9
+```
+
+### Large Binary Size
+
+**Problem:** Binary is too large.
+
+**Solution:** Strip debug symbols:
+
+```bash
+go build -ldflags="-s -w" -o server .
+# Or use UPX compression
+upx --best --lzma server
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Go README" icon="golang" href="https://github.com/firebase/genkit/blob/main/go/README.md">
+    Full Go SDK documentation
+  </Card>
+  <Card title="Cloud Run" icon="docker" href="/deployment/cloud-run">
+    Deploy to Google Cloud Run
+  </Card>
+</CardGroup>

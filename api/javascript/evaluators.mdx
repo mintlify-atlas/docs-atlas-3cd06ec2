@@ -1,0 +1,362 @@
+---
+title: Evaluators API
+description: API reference for evaluators in Genkit (JavaScript/TypeScript)
+---
+
+Evaluators assess the quality and performance of AI models and flows.
+
+## defineEvaluator()
+
+Defines and registers an evaluator.
+
+```typescript
+import { defineEvaluator } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const faithfulnessEvaluator = defineEvaluator(
+  registry,
+  {
+    name: 'faithfulness',
+    displayName: 'Faithfulness',
+    definition: 'Evaluates if the output is faithful to the context',
+    dataPointType: BaseEvalDataPointSchema,
+    configSchema: z.object({
+      threshold: z.number().default(0.7),
+    }),
+  },
+  async (datapoint, options) => {
+    const score = await computeFaithfulness(
+      datapoint.output,
+      datapoint.context
+    );
+    
+    return {
+      testCaseId: datapoint.testCaseId,
+      evaluation: {
+        score,
+        status: score >= options.threshold ? 'PASS' : 'FAIL',
+        details: {
+          reasoning: `Score: ${score}`,
+        },
+      },
+    };
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="options" type="EvaluatorOptions<DataPoint, EvaluatorOpts>" required>
+  <ParamField path="name" type="string" required>
+    Unique name for the evaluator
+  </ParamField>
+  
+  <ParamField path="displayName" type="string" required>
+    Human-readable display name
+  </ParamField>
+  
+  <ParamField path="definition" type="string" required>
+    Description of what the evaluator measures
+  </ParamField>
+  
+  <ParamField path="dataPointType" type="DataPoint">
+    Zod schema for the expected data point structure
+  </ParamField>
+  
+  <ParamField path="configSchema" type="EvaluatorOpts">
+    Zod schema for evaluator configuration
+  </ParamField>
+  
+  <ParamField path="isBilled" type="boolean">
+    Whether this evaluator incurs costs (default: `true`)
+  </ParamField>
+</ParamField>
+
+<ParamField path="runner" type="EvaluatorFn<EvalDataPoint, EvaluatorOpts>" required>
+  Implementation function
+  
+  **Function signature:**
+  ```typescript
+  (datapoint: z.infer<EvalDataPoint>, options?: z.infer<EvaluatorOpts>) 
+    => Promise<EvalResponse>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="evaluator" type="EvaluatorAction">
+  An evaluator action that can be used with `evaluate()`
+</ResponseField>
+
+## evaluate()
+
+Evaluates a dataset using an evaluator.
+
+```typescript
+import { evaluate } from '@genkit-ai/ai';
+
+const results = await evaluate(registry, {
+  evaluator: 'faithfulness',
+  dataset: [
+    {
+      testCaseId: 'test-1',
+      input: 'What is AI?',
+      output: 'AI is artificial intelligence.',
+      context: ['AI stands for artificial intelligence'],
+    },
+  ],
+  options: { threshold: 0.8 },
+});
+
+console.log(results); // EvalResponses
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="params" type="EvaluatorParams<DataPoint, CustomOptions>" required>
+  <ParamField path="evaluator" type="EvaluatorArgument<DataPoint, CustomOptions>" required>
+    Evaluator to use (string name, EvaluatorAction, or EvaluatorReference)
+  </ParamField>
+  
+  <ParamField path="dataset" type="Dataset<DataPoint>" required>
+    Array of data points to evaluate
+  </ParamField>
+  
+  <ParamField path="evalRunId" type="string">
+    Unique identifier for this evaluation run (auto-generated if not provided)
+  </ParamField>
+  
+  <ParamField path="options" type="z.infer<CustomOptions>">
+    Evaluator-specific configuration
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="results" type="EvalResponses">
+  Array of evaluation results
+  
+  ```typescript
+  type EvalResponses = EvalResponse[];
+  ```
+</ResponseField>
+
+## evaluatorRef()
+
+Creates a reference to an evaluator.
+
+```typescript
+import { evaluatorRef } from '@genkit-ai/ai';
+
+const faithfulnessRef = evaluatorRef({
+  name: 'faithfulness',
+  info: {
+    label: 'Faithfulness Evaluator',
+    metrics: ['faithfulness_score'],
+  },
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="EvaluatorReference<CustomOptionsSchema>" required>
+  <ParamField path="name" type="string" required>
+    Evaluator name
+  </ParamField>
+  
+  <ParamField path="configSchema" type="CustomOptionsSchema">
+    Configuration schema
+  </ParamField>
+  
+  <ParamField path="info" type="EvaluatorInfo">
+    Evaluator metadata
+    
+    <Expandable title="EvaluatorInfo properties">
+      <ParamField path="label" type="string">
+        Human-readable label
+      </ParamField>
+      
+      <ParamField path="metrics" type="string[]" required>
+        List of metric names this evaluator produces
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="reference" type="EvaluatorReference<CustomOptionsSchema>">
+  An evaluator reference
+</ResponseField>
+
+## Types
+
+### BaseDataPoint
+
+```typescript
+const BaseDataPointSchema = z.object({
+  input: z.unknown(),
+  output: z.unknown().optional(),
+  context: z.array(z.unknown()).optional(),
+  reference: z.unknown().optional(),
+  testCaseId: z.string().optional(),
+  traceIds: z.array(z.string()).optional(),
+});
+
+type BaseDataPoint = z.infer<typeof BaseDataPointSchema>;
+```
+
+### BaseEvalDataPoint
+
+```typescript
+const BaseEvalDataPointSchema = BaseDataPointSchema.extend({
+  testCaseId: z.string(),
+});
+
+type BaseEvalDataPoint = z.infer<typeof BaseEvalDataPointSchema>;
+```
+
+### Score
+
+```typescript
+const ScoreSchema = z.object({
+  id: z.string().optional(),
+  score: z.union([z.number(), z.string(), z.boolean()]).optional(),
+  status: z.enum(['UNKNOWN', 'PASS', 'FAIL']).optional(),
+  error: z.string().optional(),
+  details: z.object({
+    reasoning: z.string().optional(),
+  }).passthrough().optional(),
+});
+
+type Score = z.infer<typeof ScoreSchema>;
+```
+
+### EvalResponse
+
+```typescript
+const EvalResponseSchema = z.object({
+  sampleIndex: z.number().optional(),
+  testCaseId: z.string(),
+  traceId: z.string().optional(),
+  spanId: z.string().optional(),
+  evaluation: z.union([ScoreSchema, z.array(ScoreSchema)]),
+});
+
+type EvalResponse = z.infer<typeof EvalResponseSchema>;
+```
+
+### EvaluatorAction
+
+```typescript
+type EvaluatorAction<
+  DataPoint extends typeof BaseDataPointSchema = typeof BaseDataPointSchema,
+  CustomOptions extends z.ZodTypeAny = z.ZodTypeAny
+> = Action<typeof EvalRequestSchema, typeof EvalResponsesSchema> & {
+  __dataPointType?: DataPoint;
+  __configSchema?: CustomOptions;
+};
+```
+
+### EvalStatusEnum
+
+```typescript
+enum EvalStatusEnum {
+  UNKNOWN = 'UNKNOWN',
+  PASS = 'PASS',
+  FAIL = 'FAIL',
+}
+```
+
+## Example: Custom Evaluator
+
+```typescript
+import { ai } from './genkit';
+import { BaseEvalDataPointSchema } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+// Define custom data point schema
+const CustomDataPointSchema = BaseEvalDataPointSchema.extend({
+  expectedKeywords: z.array(z.string()).optional(),
+});
+
+// Define evaluator
+const keywordEvaluator = ai.defineEvaluator(
+  {
+    name: 'keyword-presence',
+    displayName: 'Keyword Presence',
+    definition: 'Checks if expected keywords are present in the output',
+    dataPointType: CustomDataPointSchema,
+    configSchema: z.object({
+      caseSensitive: z.boolean().default(false),
+    }),
+    isBilled: false,
+  },
+  async (datapoint, options) => {
+    const output = String(datapoint.output || '');
+    const keywords = datapoint.expectedKeywords || [];
+    
+    let foundCount = 0;
+    const missingKeywords: string[] = [];
+    
+    for (const keyword of keywords) {
+      const searchTerm = options.caseSensitive 
+        ? keyword 
+        : keyword.toLowerCase();
+      const searchIn = options.caseSensitive
+        ? output
+        : output.toLowerCase();
+      
+      if (searchIn.includes(searchTerm)) {
+        foundCount++;
+      } else {
+        missingKeywords.push(keyword);
+      }
+    }
+    
+    const score = keywords.length > 0 ? foundCount / keywords.length : 1;
+    
+    return {
+      testCaseId: datapoint.testCaseId,
+      evaluation: {
+        score,
+        status: score >= 1 ? 'PASS' : 'FAIL',
+        details: {
+          reasoning: `Found ${foundCount}/${keywords.length} keywords`,
+          missingKeywords,
+        },
+      },
+    };
+  }
+);
+
+// Run evaluation
+const results = await ai.evaluate({
+  evaluator: keywordEvaluator,
+  dataset: [
+    {
+      testCaseId: 'test-1',
+      input: 'Explain quantum computing',
+      output: 'Quantum computing uses qubits and superposition',
+      expectedKeywords: ['quantum', 'qubits'],
+    },
+    {
+      testCaseId: 'test-2',
+      input: 'What is AI?',
+      output: 'Artificial intelligence is machine learning',
+      expectedKeywords: ['artificial', 'intelligence', 'neural'],
+    },
+  ],
+  options: { caseSensitive: false },
+});
+
+console.log(results);
+```

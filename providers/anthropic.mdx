@@ -1,0 +1,515 @@
+---
+title: Anthropic Provider (Claude)
+description: Access Claude models with advanced reasoning capabilities
+---
+
+The Anthropic provider gives you access to Claude models, known for their advanced reasoning, long context windows, and safety features. Claude excels at complex analysis, extended thinking, and providing accurate citations.
+
+## Installation
+
+```bash
+npm install @genkit-ai/anthropic
+```
+
+## Setup
+
+### Get an API Key
+
+1. Sign up at [Anthropic Console](https://console.anthropic.com/)
+2. Navigate to API Keys
+3. Create a new API key
+4. Set it as an environment variable:
+
+```bash
+export ANTHROPIC_API_KEY=your-api-key
+```
+
+### Configure the Plugin
+
+```typescript
+import { genkit } from 'genkit';
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+  plugins: [
+    anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+  ],
+  // Optional: set a default Claude model
+  model: anthropic.model('claude-sonnet-4-5'),
+});
+```
+
+## Available Models
+
+Anthropic offers the Claude model family in three tiers:
+
+### Claude 4.5 (Latest)
+
+- **claude-sonnet-4-5** - Most powerful, balanced performance and intelligence
+- **claude-opus-4-5** - Highest intelligence for complex tasks
+- **claude-haiku-4-5** - Fastest, most cost-effective
+
+### Claude 4
+
+- **claude-sonnet-4** - Previous generation Sonnet
+- **claude-opus-4** - Previous generation Opus
+
+### Claude 3.5
+
+- **claude-3-5-haiku** - Fast and lightweight
+- **claude-3-5-sonnet** - Balanced (older version)
+
+### Claude 3
+
+- **claude-3-haiku** - Budget-friendly option
+
+All Claude models support:
+- Multi-turn conversations (200K+ token context)
+- Vision (images)
+- Function calling (tools)
+- System instructions
+- JSON mode
+
+## Usage Examples
+
+### Basic Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+  plugins: [anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })],
+});
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Explain the concept of entropy in thermodynamics.',
+});
+
+console.log(response.text());
+```
+
+### Extended Thinking
+
+Claude 4 models can expose their internal reasoning process:
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Walk me through your reasoning for why prime numbers are infinite.',
+  config: {
+    thinking: {
+      enabled: true,
+      budgetTokens: 4096, // Must be >= 1024 and < maxOutputTokens
+    },
+  },
+});
+
+console.log('Reasoning:', response.reasoning); // Internal thought process
+console.log('Answer:', response.text());       // Final answer
+```
+
+<Note>
+Extended thinking is only available on Claude 4+ models and requires additional tokens.
+</Note>
+
+### Document Citations
+
+Claude can cite specific parts of documents you provide:
+
+```typescript
+import { anthropic, anthropicDocument } from '@genkit-ai/anthropic';
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  messages: [
+    {
+      role: 'user',
+      content: [
+        anthropicDocument({
+          source: {
+            type: 'text',
+            data: 'The Earth orbits the Sun. The Moon orbits the Earth. Jupiter is the largest planet.',
+          },
+          title: 'Solar System Facts',
+          citations: { enabled: true },
+        }),
+        { text: 'What orbits the Earth? Cite your source.' },
+      ],
+    },
+  ],
+});
+
+// Access citations
+const citations = response.message?.content?.flatMap(
+  (part) => part.metadata?.citations || []
+) ?? [];
+
+console.log('Answer:', response.text());
+console.log('Citations:', citations);
+```
+
+**Supported Document Types:**
+- `text` - Plain text (returns character locations)
+- `base64` - Base64-encoded PDFs (returns page numbers)
+- `url` - PDFs from URLs (returns page numbers)
+- `content` - Custom content blocks (returns block indices)
+
+<Warning>
+All documents in a request must have citations enabled or disabled - you cannot mix.
+</Warning>
+
+### Prompt Caching
+
+Reduce costs by caching large prompts:
+
+```typescript
+import { anthropic, cacheControl } from '@genkit-ai/anthropic';
+
+const longSystemPrompt = `...your 50K token system prompt...`;
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  system: {
+    text: longSystemPrompt,
+    metadata: { ...cacheControl() }, // Cache with default TTL
+  },
+  prompt: 'Based on the instructions, what should I do?',
+});
+
+// Subsequent requests with the same system prompt will use cache
+const response2 = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  system: {
+    text: longSystemPrompt,
+    metadata: { ...cacheControl() },
+  },
+  prompt: 'Another question...',
+});
+```
+
+You can specify custom TTL:
+
+```typescript
+metadata: { ...cacheControl({ ttl: '1h' }) }
+```
+
+<Note>
+Caching only activates when prompts exceed minimum token thresholds (see [Anthropic docs](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)).
+</Note>
+
+### Vision (Image Analysis)
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: [
+    { text: 'Describe everything you see in this image in detail.' },
+    { media: { url: 'https://example.com/image.jpg' } },
+  ],
+});
+
+console.log(response.text());
+```
+
+### Streaming Responses
+
+```typescript
+const { response, stream } = await ai.generateStream({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Write a comprehensive essay on artificial intelligence.',
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text());
+}
+
+await response; // Wait for completion
+```
+
+### Function Calling
+
+```typescript
+import { z } from 'genkit';
+
+const searchDatabase = ai.defineTool(
+  {
+    name: 'searchDatabase',
+    description: 'Search the product database',
+    inputSchema: z.object({
+      query: z.string().describe('Search query'),
+      limit: z.number().optional().describe('Max results'),
+    }),
+    outputSchema: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number(),
+    })),
+  },
+  async ({ query, limit = 10 }) => {
+    // Search your database
+    return [
+      { id: '1', name: 'Product A', price: 29.99 },
+      { id: '2', name: 'Product B', price: 49.99 },
+    ];
+  }
+);
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Find products related to "laptop"',
+  tools: [searchDatabase],
+});
+
+console.log(response.text());
+```
+
+### JSON Output Mode
+
+```typescript
+import { z } from 'genkit';
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'List the top 3 programming languages in 2024',
+  output: {
+    schema: z.object({
+      languages: z.array(z.object({
+        name: z.string(),
+        ranking: z.number(),
+        reason: z.string(),
+      })),
+    }),
+  },
+});
+
+console.log(response.output());
+// {
+//   languages: [
+//     { name: 'Python', ranking: 1, reason: '...' },
+//     { name: 'JavaScript', ranking: 2, reason: '...' },
+//     { name: 'TypeScript', ranking: 3, reason: '...' },
+//   ]
+// }
+```
+
+### Using in a Flow
+
+```typescript
+import { z } from 'genkit';
+
+export const analyzeFlow = ai.defineFlow(
+  {
+    name: 'analyze',
+    inputSchema: z.object({
+      text: z.string(),
+      question: z.string(),
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ text, question }) => {
+    const response = await ai.generate({
+      model: anthropic.model('claude-sonnet-4-5'),
+      prompt: `Based on this text:\n\n${text}\n\nQuestion: ${question}`,
+      config: {
+        thinking: {
+          enabled: true,
+          budgetTokens: 2048,
+        },
+      },
+    });
+    return response.text();
+  }
+);
+```
+
+## Configuration Options
+
+### Model Parameters
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Write a creative story',
+  config: {
+    temperature: 1.0,         // Randomness (0.0 - 1.0)
+    topP: 0.9,                 // Nucleus sampling
+    topK: 50,                  // Top-k sampling
+    maxOutputTokens: 4096,     // Max response length
+    stopSequences: ['THE END'], // Stop triggers
+  },
+});
+```
+
+### API Version
+
+Specify a specific Anthropic API version:
+
+```typescript
+anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiVersion: '2023-06-01',
+})
+```
+
+## Model Selection Guide
+
+### When to Use Each Model
+
+**claude-sonnet-4-5** (recommended default):
+- Most tasks requiring intelligence and speed
+- Research and analysis
+- Content generation
+- Code assistance
+- Best balance of performance and cost
+
+**claude-opus-4-5**:
+- Most complex reasoning tasks
+- Research requiring highest accuracy
+- Legal or medical analysis
+- When quality is paramount
+
+**claude-haiku-4-5**:
+- Simple queries
+- High-volume applications
+- Real-time chat
+- Cost-sensitive use cases
+
+## Direct Model Usage (Without Genkit Instance)
+
+You can use Claude models directly without initializing Genkit:
+
+```typescript
+import { anthropic } from '@genkit-ai/anthropic';
+
+const claude = anthropic.model('claude-sonnet-4-5');
+
+const response = await claude({
+  messages: [
+    {
+      role: 'user',
+      content: [{ text: 'Hello, Claude!' }],
+    },
+  ],
+});
+
+console.log(response);
+```
+
+This is useful for:
+- Framework developers needing raw model access
+- Testing models in isolation
+- Using Genkit models in non-Genkit applications
+
+## Key Features
+
+### Long Context Windows
+
+Claude models support 200K+ tokens of context:
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: [
+    { text: 'Analyze this entire book:' },
+    { text: entireBookText }, // Up to 200K tokens
+    { text: 'What are the main themes?' },
+  ],
+});
+```
+
+### Constitutional AI
+
+Claude is trained with Constitutional AI for:
+- Helpful, harmless, and honest responses
+- Better refusal of harmful requests
+- More nuanced understanding of ethics
+
+### Advanced Reasoning
+
+Claude excels at:
+- Multi-step reasoning
+- Logical deduction
+- Mathematical proofs
+- Code analysis
+- Research synthesis
+
+## Troubleshooting
+
+### API Key Not Found
+
+```
+Error: Please pass in the API key or set the ANTHROPIC_API_KEY environment variable
+```
+
+**Solution:**
+
+```bash
+export ANTHROPIC_API_KEY=your-api-key
+```
+
+Or pass explicitly:
+
+```typescript
+anthropic({ apiKey: 'your-api-key' })
+```
+
+### Rate Limiting
+
+If you exceed rate limits:
+
+```typescript
+import { retry } from 'genkit/retry';
+
+const response = await retry(
+  () => ai.generate({
+    model: anthropic.model('claude-sonnet-4-5'),
+    prompt: 'Hello',
+  }),
+  { maxRetries: 3, backoff: 'exponential' }
+);
+```
+
+### Context Length Exceeded
+
+```
+Error: prompt is too long: XXX tokens > 200000 maximum
+```
+
+**Solution:** Reduce prompt size or split into multiple requests.
+
+## Best Practices
+
+1. **Use environment variables** for API keys
+2. **Enable thinking** for complex reasoning tasks
+3. **Use citations** when factual accuracy is critical
+4. **Cache large prompts** to reduce costs
+5. **Choose the right model** - Haiku for speed, Sonnet for balance, Opus for quality
+6. **Implement retry logic** for rate limits
+7. **Stream long responses** for better UX
+
+## Pricing
+
+Anthropic pricing is based on token usage:
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) |
+|-------|----------------------|------------------------|
+| Haiku 4.5 | $0.80 | $4.00 |
+| Sonnet 4.5 | $3.00 | $15.00 |
+| Opus 4.5 | $15.00 | $75.00 |
+
+**Cost Optimization:**
+- Use Haiku for simple tasks
+- Enable prompt caching for repeated prompts
+- Set appropriate `maxOutputTokens` limits
+- Use streaming to allow early termination
+
+See [Anthropic Pricing](https://www.anthropic.com/pricing) for latest rates.
+
+## Next Steps
+
+- [Anthropic Documentation](https://docs.anthropic.com/)
+- [Prompt Engineering](/concepts/prompts)
+- [Building Flows](/concepts/flows)
+- [RAG with Citations](/guides/rag)

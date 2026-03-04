@@ -1,0 +1,239 @@
+---
+title: Why Choose Genkit?
+description: Discover what makes Genkit the ideal framework for building production-ready AI applications
+---
+
+# Why Choose Genkit?
+
+Genkit is designed to bridge the gap between AI experimentation and production deployment. Built and used in production by Google's Firebase team, it provides the tools and abstractions you need to build, test, and deploy AI-powered applications with confidence.
+
+## Key Advantages
+
+### Multi-Language, Unified API
+
+Build with the language that best fits your project and team. Genkit provides consistent APIs and capabilities across all supported languages:
+
+<CardGroup cols={3}>
+  <Card title="JavaScript/TypeScript" icon="js">
+    Production-ready with full feature support
+  </Card>
+  <Card title="Go" icon="golang">
+    Production-ready with full feature support
+  </Card>
+  <Card title="Python" icon="python">
+    Alpha release with core functionality
+  </Card>
+</CardGroup>
+
+Whether you're building a Next.js web app, a Go microservice, or a Python data pipeline, you get the same powerful abstractions and developer experience.
+
+### Broad Model Support
+
+Genkit provides a **unified interface** to integrate with hundreds of AI models from multiple providers:
+
+- **Google AI**: Gemini 2.5 Flash, Gemini 2.5 Pro, Imagen, Veo, Lyria
+- **OpenAI**: GPT-4, GPT-3.5, and other models
+- **Anthropic**: Claude 3.5, Claude 3 Opus, and more
+- **Ollama**: Llama, Mistral, and other open-source models
+- **Many more**: Vertex AI, Amazon Bedrock, Cohere, DeepSeek, Grok (xAI), HuggingFace
+
+Switch between models by changing a single line of code. Compare outputs from different providers to find the best fit for your use case.
+
+```typescript
+// Try different models with the same code
+const response1 = await ai.generate({
+    model: googleAI.model('gemini-2.5-flash'),
+    prompt: 'Explain quantum computing'
+});
+
+const response2 = await ai.generate({
+    model: anthropic.model('claude-3-5-sonnet'),
+    prompt: 'Explain quantum computing'
+});
+```
+
+### Simplified AI Development
+
+Genkit handles the complexity of AI development so you can focus on building great features:
+
+<AccordionGroup>
+  <Accordion title="Structured Output" icon="table">
+    Get type-safe JSON responses that match your schema. No more parsing unreliable text outputs:
+
+    ```typescript
+    const recipe = await ai.generate({
+        model: googleAI.model('gemini-2.5-flash'),
+        prompt: 'Create a chocolate chip cookie recipe',
+        output: { schema: RecipeSchema }
+    });
+    // recipe.ingredients is properly typed!
+    ```
+  </Accordion>
+
+  <Accordion title="Tool Calling & Agents" icon="robot">
+    Build agentic workflows where models can call functions, APIs, and external services:
+
+    ```typescript
+    const weatherTool = ai.tool({
+        name: 'getWeather',
+        description: 'Gets current weather for a location',
+        inputSchema: z.object({ location: z.string() }),
+        outputSchema: z.string()
+    }, async ({ location }) => {
+        return `Weather in ${location}: 72°F and sunny`;
+    });
+
+    const response = await ai.generate({
+        model: googleAI.model('gemini-2.5-flash'),
+        prompt: "What's the weather in San Francisco?",
+        tools: [weatherTool]
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Multimodal Input/Output" icon="image">
+    Work with text, images, audio, and video in a unified way. Generate images with Imagen, create videos with Veo, or analyze images with Gemini.
+  </Accordion>
+
+  <Accordion title="Context-Aware Generation (RAG)" icon="database">
+    Build retrieval-augmented generation pipelines with built-in support for embeddings, vector stores, and document retrieval.
+  </Accordion>
+</AccordionGroup>
+
+### Production-Ready from Day One
+
+<CardGroup cols={2}>
+  <Card title="Deploy Anywhere" icon="cloud">
+    Deploy to any environment that supports your language:
+    - Cloud Functions for Firebase
+    - Google Cloud Run
+    - AWS Lambda
+    - Azure Functions
+    - Fly.io, Railway, Render
+    - Kubernetes
+    - Bare metal servers
+  </Card>
+
+  <Card title="Comprehensive Monitoring" icon="chart-line">
+    Track model performance, request volumes, latency, and error rates. Integrate with:
+    - Google Cloud Trace
+    - Firebase Console
+    - OpenTelemetry-compatible backends
+    - Custom observability platforms
+  </Card>
+
+  <Card title="Built-in Security" icon="shield">
+    Implement authentication and authorization with context providers. Add safety guardrails with the Checks plugin.
+  </Card>
+
+  <Card title="Framework Agnostic" icon="plug">
+    Integrate with your existing stack:
+    - Next.js, React, Angular, Vue
+    - Express, Fastify, Hono
+    - Flask, FastAPI (Python)
+    - Gin, Echo, Chi (Go)
+  </Card>
+</CardGroup>
+
+### Developer Experience
+
+Genkit provides best-in-class tooling for AI development:
+
+#### CLI and Developer UI
+
+- **Test flows interactively** with different inputs
+- **Inspect execution traces** to debug complex multi-step operations
+- **Compare model outputs** side-by-side
+- **Evaluate against datasets** to measure quality
+- **Visualize tool calls** and agent decision-making
+
+<Frame>
+  <img src="/images/devtools-ui.png" alt="Genkit Developer UI" />
+</Frame>
+
+#### Type Safety
+
+Get full TypeScript/type safety across your entire AI pipeline:
+
+- Input and output schemas validated at runtime
+- Autocomplete for model names, parameters, and configurations
+- Compile-time errors for invalid tool definitions
+- IDE integration with inline documentation
+
+### Plugin Architecture
+
+Extend Genkit with a rich ecosystem of plugins:
+
+- **Model Providers**: Google AI, OpenAI, Anthropic, Ollama, Vertex AI, and more
+- **Vector Stores**: Firebase, Vertex AI Vector Search, Pinecone, Chroma
+- **Observability**: Google Cloud, Firebase, Datadog, Sentry, Honeycomb
+- **Frameworks**: Flask, Express, Next.js
+- **Protocols**: Model Context Protocol (MCP) for tool integration
+
+Or build your own plugins to integrate custom models, data sources, or services.
+
+## How Genkit Compares
+
+<CardGroup cols={1}>
+  <Card title="vs. Direct API Calls" icon="code">
+    **Genkit provides**: Unified interface across providers, built-in tracing, type-safe schemas, tool calling abstractions, prompt management, and production monitoring.
+    
+    **Direct APIs require**: Custom code for each provider, manual logging, error handling boilerplate, and building your own observability.
+  </Card>
+
+  <Card title="vs. Python-Only Frameworks" icon="python">
+    **Genkit provides**: Multi-language support (JS/TS, Go, Python), consistent APIs across languages, and the ability to use different languages for different services.
+    
+    **Python-only frameworks limit**: Your architecture to Python, making it harder to integrate with existing web apps or microservices in other languages.
+  </Card>
+
+  <Card title="vs. Chat-Focused Libraries" icon="comments">
+    **Genkit provides**: Full application framework with flows, deployable endpoints, monitoring, and RAG support—not just chat interfaces.
+    
+    **Chat libraries focus**: Primarily on conversation interfaces, requiring you to build deployment, observability, and production features yourself.
+  </Card>
+</CardGroup>
+
+## Built by Google, Open for Everyone
+
+Genkit is:
+
+- **Open source** (Apache 2.0 license)
+- **Production-tested** by Google's Firebase team
+- **Provider-agnostic** (use any model, any cloud)
+- **Community-driven** with contributions from developers worldwide
+
+Join the growing community of developers building production AI applications with Genkit.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running with Genkit in minutes
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="book"
+    href="/concepts"
+  >
+    Learn about flows, tools, prompts, and more
+  </Card>
+  <Card
+    title="Model Plugins"
+    icon="plug"
+    href="/plugins/overview"
+  >
+    Explore available model providers and integrations
+  </Card>
+  <Card
+    title="Examples"
+    icon="code"
+    href="https://examples.genkit.dev"
+  >
+    See Genkit in action with interactive examples
+  </Card>
+</CardGroup>

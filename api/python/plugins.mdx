@@ -1,0 +1,164 @@
+---
+title: Plugin API
+description: Plugin API reference (Python)
+---
+
+Plugins extend Genkit with models, embedders, and other capabilities.
+
+## Plugin Interface
+
+```python
+from genkit.core.plugin import Plugin
+from genkit.ai import GenkitRegistry
+
+class MyPlugin(Plugin):
+    """Custom Genkit plugin."""
+    
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key
+    
+    @property
+    def name(self) -> str:
+        """Plugin name."""
+        return "my-plugin"
+    
+    def initialize(self, registry: GenkitRegistry) -> None:
+        """Initialize the plugin.
+        
+        Args:
+            registry: Genkit registry to register actions with
+        """
+        # Register models, embedders, etc.
+        self._register_models(registry)
+        self._register_embedders(registry)
+    
+    def _register_models(self, registry: GenkitRegistry) -> None:
+        """Register plugin models."""
+        # Register model actions
+        pass
+    
+    def _register_embedders(self, registry: GenkitRegistry) -> None:
+        """Register plugin embedders."""
+        # Register embedder actions
+        pass
+```
+
+## Using Plugins
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleAI
+
+ai = Genkit(
+    plugins=[
+        GoogleAI(),
+        MyPlugin(api_key="..."),
+    ],
+)
+```
+
+## Built-in Plugins
+
+### Google AI
+
+```python
+from genkit.plugins.google_genai import GoogleAI
+
+ai = Genkit(
+    plugins=[GoogleAI(api_key="...")],
+)
+```
+
+### Vertex AI
+
+```python
+from genkit.plugins.vertex_ai import VertexAI
+
+ai = Genkit(
+    plugins=[VertexAI(
+        project="my-project",
+        location="us-central1",
+    )],
+)
+```
+
+## Plugin Methods
+
+### name
+
+```python
+@property
+def name(self) -> str:
+    """Returns the plugin name."""
+    return "my-plugin"
+```
+
+### initialize()
+
+```python
+def initialize(self, registry: GenkitRegistry) -> None:
+    """Initialize the plugin with the registry.
+    
+    Args:
+        registry: Genkit registry for registering actions
+    """
+    # Register actions
+    pass
+```
+
+## Example: Custom Model Plugin
+
+```python
+from genkit.core.plugin import Plugin
+from genkit.ai import GenkitRegistry
+from genkit.blocks.model import ModelAction, ModelRequest, ModelResponse
+from genkit.core.typing import Message, Part, Role
+
+class CustomModelPlugin(Plugin):
+    """Plugin providing a custom model."""
+    
+    @property
+    def name(self) -> str:
+        return "custom-model"
+    
+    def initialize(self, registry: GenkitRegistry) -> None:
+        """Register custom model."""
+        
+        async def model_fn(request: ModelRequest) -> ModelResponse:
+            """Custom model implementation."""
+            # Process request
+            messages = request.messages
+            
+            # Generate response
+            response_text = "Custom model response"
+            
+            return ModelResponse(
+                message=Message(
+                    role=Role.MODEL,
+                    content=[Part(text=response_text)],
+                ),
+                finish_reason="stop",
+            )
+        
+        # Register model action
+        registry.register_model(
+            name="custom-model/v1",
+            fn=model_fn,
+            metadata={
+                "label": "Custom Model v1",
+                "supports": {
+                    "multiturn": True,
+                    "media": False,
+                    "tools": False,
+                },
+            },
+        )
+
+# Use the plugin
+ai = Genkit(plugins=[CustomModelPlugin()])
+
+response = await ai.generate(
+    model="custom-model/v1",
+    prompt="Hello!",
+)
+```

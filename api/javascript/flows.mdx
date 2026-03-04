@@ -1,0 +1,320 @@
+---
+title: Flows API
+description: Flow definition and execution APIs
+---
+
+# Flows API
+
+Flows are the primary mechanism for orchestrating multi-step AI tasks in Genkit. Each flow run is automatically traced for observability.
+
+## defineFlow()
+
+Defines and registers a flow function.
+
+**Signature:**
+
+```typescript
+defineFlow<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  S extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  registry: Registry,
+  config: FlowConfig<I, O, S> | string,
+  fn: FlowFn<I, O, S>
+): Action<I, O, S>
+```
+
+### Parameters
+
+<ParamField path="config" type="FlowConfig | string" required>
+  Flow configuration or simple name string
+
+  <Expandable title="FlowConfig properties">
+    <ParamField path="name" type="string" required>
+      Unique identifier for the flow
+    </ParamField>
+
+    <ParamField path="inputSchema" type="z.ZodTypeAny" optional>
+      Zod schema for input validation
+    </ParamField>
+
+    <ParamField path="outputSchema" type="z.ZodTypeAny" optional>
+      Zod schema for output validation
+    </ParamField>
+
+    <ParamField path="streamSchema" type="z.ZodTypeAny" optional>
+      Schema for streaming chunks (for streaming flows)
+    </ParamField>
+
+    <ParamField path="description" type="string" optional>
+      Human-readable description of the flow's purpose
+    </ParamField>
+
+    <ParamField path="middleware" type="Middleware[]" optional>
+      Middleware to apply to the flow execution
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="fn" type="FlowFn<I, O, S>" required>
+  The flow implementation function
+
+  ```typescript
+  type FlowFn<I, O, S> = (
+    input: z.infer<I>,
+    streamingCallback?: StreamingCallback<z.infer<S>>
+  ) => Promise<z.infer<O>>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="action" type="Action<I, O, S>">
+  A registered flow action that can be invoked
+
+  <Expandable title="Action methods">
+    <ResponseField name="run()" type="(input: I) => Promise<O>">
+      Execute the flow with input and return output
+    </ResponseField>
+
+    <ResponseField name="stream()" type="(input: I) => StreamingResponse<S, O>">
+      Execute the flow with streaming (if streamSchema is defined)
+    </ResponseField>
+
+    <ResponseField name="__action" type="ActionMetadata">
+      Metadata about the action (name, schemas, etc.)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+import { defineFlow } from '@genkit-ai/core';
+import { z } from 'zod';
+
+const menuSuggestionFlow = defineFlow(
+  registry,
+  {
+    name: 'menuSuggestionFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+    description: 'Suggests menu items for themed restaurants',
+  },
+  async (subject) => {
+    const llmResponse = await generate(registry, {
+      prompt: `Suggest an item for the menu of a ${subject} themed restaurant`,
+    });
+    return llmResponse.text;
+  }
+);
+
+// Execute the flow
+const suggestion = await menuSuggestionFlow.run('pirate');
+console.log(suggestion);
+```
+
+## Streaming Flows
+
+Flows can support streaming by providing a `streamSchema` and using the streaming callback.
+
+### Example
+
+```typescript
+const streamingFlow = defineFlow(
+  registry,
+  {
+    name: 'streamingFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+    streamSchema: z.string(), // Chunks are strings
+  },
+  async (input, streamingCallback) => {
+    if (streamingCallback) {
+      // Stream mode
+      const { response, stream } = generateStream(registry, {
+        prompt: input,
+      });
+
+      for await (const chunk of stream) {
+        await streamingCallback(chunk.text);
+      }
+
+      return (await response).text;
+    } else {
+      // Non-streaming mode
+      const response = await generate(registry, { prompt: input });
+      return response.text;
+    }
+  }
+);
+
+// Use with streaming
+const { response, stream } = streamingFlow.stream('Tell me a story');
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+
+const final = await response;
+```
+
+## run()
+
+Executes a function within a flow context, creating a distinct trace span. Used to add observability to sub-operations.
+
+**Signature:**
+
+```typescript
+run<T>(name: string, func: () => Promise<T>): Promise<T>
+run<T>(name: string, input: any, func: (input?: any) => Promise<T>): Promise<T>
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  Label for the trace span
+</ParamField>
+
+<ParamField path="input" type="any" optional>
+  Optional input to pass to the function
+</ParamField>
+
+<ParamField path="func" type="Function" required>
+  Function to execute within the traced span
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="T">
+  The result of the function execution
+</ResponseField>
+
+### Example
+
+```typescript
+const complexFlow = defineFlow(
+  registry,
+  {
+    name: 'complexTask',
+    inputSchema: z.string(),
+    outputSchema: z.object({
+      processed: z.string(),
+      summary: z.string(),
+    }),
+  },
+  async (input) => {
+    // Step 1: Process input (traced)
+    const processed = await run('process-input', async () => {
+      return input.toUpperCase();
+    });
+
+    // Step 2: Generate summary (traced)
+    const summary = await run('generate-summary', async () => {
+      const response = await generate(registry, {
+        prompt: `Summarize: ${processed}`,
+      });
+      return response.text;
+    });
+
+    return { processed, summary };
+  }
+);
+```
+
+## Flow Types
+
+### FlowFn
+
+The function signature for flow implementations.
+
+```typescript
+type FlowFn<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  S extends z.ZodTypeAny = z.ZodTypeAny
+> = (
+  input: z.infer<I>,
+  streamingCallback?: StreamingCallback<z.infer<S>>
+) => Promise<z.infer<O>>
+```
+
+### StreamingCallback
+
+Callback for streaming chunks.
+
+```typescript
+type StreamingCallback<T> = (chunk: T) => void | Promise<void>
+```
+
+### FlowConfig
+
+Configuration for defining a flow.
+
+```typescript
+interface FlowConfig<
+  I extends z.ZodTypeAny = z.ZodTypeAny,
+  O extends z.ZodTypeAny = z.ZodTypeAny,
+  S extends z.ZodTypeAny = z.ZodTypeAny
+> {
+  name: string;
+  inputSchema?: I;
+  outputSchema?: O;
+  streamSchema?: S;
+  description?: string;
+  middleware?: Middleware[];
+}
+```
+
+## Usage with Genkit Instance
+
+When using the `Genkit` class, flows are defined through the instance:
+
+```typescript
+import { genkit } from 'genkit';
+import { z } from 'zod';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const myFlow = ai.defineFlow(
+  {
+    name: 'myFlow',
+    inputSchema: z.object({ query: z.string() }),
+    outputSchema: z.object({ answer: z.string() }),
+  },
+  async (input) => {
+    const response = await ai.generate({
+      prompt: input.query,
+    });
+    return { answer: response.text };
+  }
+);
+
+// Run the flow
+const result = await myFlow({ query: 'What is AI?' });
+console.log(result.answer);
+```
+
+## Production Deployment
+
+Flows can be deployed as HTTP endpoints:
+
+```typescript
+import { startFlowServer } from '@genkit-ai/flow';
+
+startFlowServer({
+  flows: [menuSuggestionFlow, complexFlow],
+  port: 3000,
+});
+```
+
+This creates endpoints:
+- `POST /menuSuggestionFlow`
+- `POST /complexFlow`
+
+## See Also
+
+- [Genkit API](/api/javascript/genkit)
+- [Models API](/api/javascript/models)
+- [Tools API](/api/javascript/tools)

@@ -1,80 +1,340 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with Genkit in under a minute across JavaScript, Go, or Python
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
+Get up and running with Genkit in under a minute. Choose your preferred language and follow the steps below.
 
-### Step 1: Set up your local environment
+<Tabs>
+  <Tab title="JavaScript/TypeScript">
+    ## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    - Node.js 20 or higher
+    - npm or yarn
 
-### Step 2: Deploy your changes
+    ## Installation
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Steps>
+      <Step title="Install Genkit and Google AI plugin">
+        ```bash
+        npm install genkit @genkit-ai/google-genai
+        ```
+      </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+      <Step title="Install the Genkit CLI">
+        ```bash
+        npm install -g genkit-cli
+        ```
+      </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+      <Step title="Get an API key">
+        Get a Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
-### Step 3: Go live
+        Set it as an environment variable:
+        ```bash
+        export GOOGLE_GENAI_API_KEY="your-api-key"
+        ```
+      </Step>
+    </Steps>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ## Your First Genkit App
 
-## Next steps
+    Create a file called `index.ts` (or `index.js`):
 
-Now that you have your docs running, explore these key features:
+    ```typescript index.ts
+    import { genkit } from 'genkit';
+    import { googleAI } from '@genkit-ai/google-genai';
+
+    const ai = genkit({ plugins: [googleAI()] });
+
+    const { text } = await ai.generate({
+        model: googleAI.model('gemini-2.5-flash'),
+        prompt: 'Why is Firebase awesome?'
+    });
+
+    console.log(text);
+    ```
+
+    ## Run Your App
+
+    <CodeGroup>
+      ```bash TypeScript (tsx)
+      npx tsx index.ts
+      ```
+
+      ```bash Node.js (native)
+      node --experimental-strip-types index.ts
+      ```
+
+      ```bash JavaScript
+      node index.js
+      ```
+    </CodeGroup>
+
+    You should see the AI-generated response printed to your console!
+
+    ## Launch the Developer UI
+
+    The Genkit Developer UI helps you test and debug your AI flows:
+
+    ```bash
+    genkit start -- npx tsx index.ts
+    ```
+
+    Open your browser to the URL shown in the terminal (usually `http://localhost:4000`) to access the Developer UI.
+
+    ## Next Steps
+
+    <CardGroup cols={2}>
+      <Card title="Build Your First Flow" icon="diagram-project" href="/concepts/flows">
+        Learn how to create deployable AI workflows
+      </Card>
+      <Card title="Add Tool Calling" icon="wrench" href="/guides/tool-calling">
+        Enable your AI to use external functions and APIs
+      </Card>
+      <Card title="Structured Output" icon="brackets-curly" href="/guides/structured-output">
+        Generate type-safe JSON responses
+      </Card>
+      <Card title="Deploy to Production" icon="rocket" href="/deployment/nodejs">
+        Ship your AI features to Cloud Run, Firebase, or anywhere
+      </Card>
+    </CardGroup>
+  </Tab>
+
+  <Tab title="Go">
+    ## Prerequisites
+
+    - Go 1.23 or higher
+
+    ## Installation
+
+    <Steps>
+      <Step title="Initialize your Go module">
+        ```bash
+        mkdir genkit-app
+        cd genkit-app
+        go mod init example/genkit-app
+        ```
+      </Step>
+
+      <Step title="Install Genkit for Go">
+        ```bash
+        go get github.com/firebase/genkit/go
+        ```
+      </Step>
+
+      <Step title="Install the Genkit CLI">
+        ```bash
+        curl -sL cli.genkit.dev | bash
+        ```
+      </Step>
+
+      <Step title="Get an API key">
+        Get a Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+        Set it as an environment variable:
+        ```bash
+        export GEMINI_API_KEY="your-api-key"
+        ```
+      </Step>
+    </Steps>
+
+    ## Your First Genkit App
+
+    Create a file called `main.go`:
+
+    ```go main.go
+    package main
+
+    import (
+        "context"
+        "fmt"
+
+        "github.com/firebase/genkit/go/ai"
+        "github.com/firebase/genkit/go/genkit"
+        "github.com/firebase/genkit/go/plugins/googlegenai"
+    )
+
+    func main() {
+        ctx := context.Background()
+        g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+        answer, err := genkit.GenerateText(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithPrompt("Why is Go a great language for AI applications?"),
+        )
+        if err != nil {
+            fmt.Println("could not generate: %s", err)
+        }
+        fmt.Println(answer)
+    }
+    ```
+
+    ## Run Your App
+
+    ```bash
+    export GEMINI_API_KEY="your-api-key"
+    go run main.go
+    ```
+
+    You should see the AI-generated response printed to your console!
+
+    ## Launch the Developer UI
+
+    The Genkit Developer UI helps you test and debug your AI flows:
+
+    ```bash
+    genkit start -- go run main.go
+    ```
+
+    Open your browser to the URL shown in the terminal (usually `http://localhost:4000`) to access the Developer UI.
+
+    ## Next Steps
+
+    <CardGroup cols={2}>
+      <Card title="Define Flows" icon="diagram-project" href="/go/flows">
+        Create deployable AI workflows with tracing
+      </Card>
+      <Card title="Add Tools" icon="wrench" href="/go/tools">
+        Give your AI the ability to call functions
+      </Card>
+      <Card title="Structured Data" icon="code" href="/go/structured-output">
+        Generate type-safe Go structs from AI models
+      </Card>
+      <Card title="HTTP Endpoints" icon="globe" href="/go/deployment">
+        Expose flows as HTTP endpoints
+      </Card>
+    </CardGroup>
+  </Tab>
+
+  <Tab title="Python">
+    <Note>
+      The Python SDK is currently in **Alpha**. APIs may change, and some features are still under development.
+    </Note>
+
+    ## Prerequisites
+
+    - Python 3.10 or higher
+    - `uv` package manager (recommended)
+
+    ## Installation
+
+    <Steps>
+      <Step title="Install uv package manager">
+        ```bash
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ```
+      </Step>
+
+      <Step title="Create a new project">
+        ```bash
+        mkdir genkit-app
+        cd genkit-app
+        uv init
+        ```
+      </Step>
+
+      <Step title="Install Genkit and Google GenAI plugin">
+        ```bash
+        uv add genkit genkit-google-genai
+        ```
+      </Step>
+
+      <Step title="Get an API key">
+        Get a Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+        Set it as an environment variable:
+        ```bash
+        export GOOGLE_GENAI_API_KEY="your-api-key"
+        ```
+      </Step>
+    </Steps>
+
+    ## Your First Genkit App
+
+    Create a file called `main.py`:
+
+    ```python main.py
+    from genkit import Genkit
+    from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+    ai = Genkit(
+        plugins=[GoogleGenAI()],
+        model=gemini_2_0_flash,
+    )
+
+    response = await ai.generate(prompt="Tell me a joke")
+    print(response.text)
+    ```
+
+    ## Run Your App
+
+    ```bash
+    export GOOGLE_GENAI_API_KEY="your-api-key"
+    uv run python main.py
+    ```
+
+    You should see the AI-generated response printed to your console!
+
+    ## Launch the Developer UI
+
+    The Genkit Developer UI helps you test and debug your AI flows:
+
+    ```bash
+    genkit start -- uv run python main.py
+    ```
+
+    <Note>
+      Install the Genkit CLI first: `curl -sL cli.genkit.dev | bash`
+    </Note>
+
+    Open your browser to the URL shown in the terminal (usually `http://localhost:4000`) to access the Developer UI.
+
+    ## Next Steps
+
+    <CardGroup cols={2}>
+      <Card title="Define Flows" icon="diagram-project" href="/python/flows">
+        Create deployable AI workflows with full tracing
+      </Card>
+      <Card title="Tool Calling" icon="tools" href="/python/tools">
+        Build agents that can call external functions
+      </Card>
+      <Card title="Structured Output" icon="database" href="/python/structured-output">
+        Generate Pydantic models from AI responses
+      </Card>
+      <Card title="Deploy with Flask" icon="flask" href="/python/deployment">
+        Expose flows as HTTP endpoints
+      </Card>
+    </CardGroup>
+  </Tab>
+</Tabs>
+
+## Common Next Steps
+
+Regardless of which language you chose, here are some common next steps:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Explore Model Providers" icon="brain" href="/plugins/overview">
+    Connect to OpenAI, Anthropic, Ollama, and more
+  </Card>
+  <Card title="Learn Core Concepts" icon="book" href="/concepts">
+    Understand flows, tools, prompts, and the Genkit architecture
+  </Card>
+  <Card title="Try Examples" icon="code" href="https://examples.genkit.dev">
+    Explore interactive examples and sample applications
+  </Card>
+  <Card title="Join the Community" icon="discord" href="https://discord.gg/qXt5zzQKpc">
+    Get help and share ideas with other developers
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Need Help?
+
+If you run into any issues:
+
+- Search [existing GitHub issues](https://github.com/firebase/genkit/issues)
+- Ask in our [Discord community](https://discord.gg/qXt5zzQKpc)
+- Review the [API documentation](/api/javascript/genkit)
+- Check out the [Community resources](/resources/community)

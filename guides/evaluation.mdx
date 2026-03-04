@@ -1,0 +1,461 @@
+---
+title: Evaluation
+description: Test and measure the quality of your AI outputs
+---
+
+# Evaluation
+
+Evaluation helps you measure and improve the quality of your AI applications. Genkit provides tools for scoring outputs, running test datasets, and tracking performance over time.
+
+## Why Evaluate?
+
+AI outputs can be unpredictable. Evaluation helps you:
+
+- **Measure quality** - Quantify how well your AI performs
+- **Catch regressions** - Detect when changes make outputs worse
+- **Compare approaches** - Test different models, prompts, or parameters
+- **Track improvements** - Monitor quality over time
+
+## Built-in Evaluators
+
+Genkit includes several built-in evaluators:
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/plugins/evaluators"
+
+metrics := []evaluators.MetricConfig{
+    {
+        MetricType: evaluators.EvaluatorDeepEqual,
+    },
+    {
+        MetricType: evaluators.EvaluatorRegex,
+    },
+    {
+        MetricType: evaluators.EvaluatorJsonata,
+    },
+}
+
+g := genkit.Init(ctx, genkit.WithPlugins(
+    &googlegenai.GoogleAI{},
+    &evaluators.GenkitEval{Metrics: metrics},
+))
+```
+
+</CodeGroup>
+
+### DeepEqual
+
+Checks if the output exactly matches an expected value:
+
+```json
+{
+  "expected": "Paris is the capital of France",
+  "actual": "Paris is the capital of France",
+  "score": 1.0
+}
+```
+
+### Regex
+
+Matches output against a regular expression:
+
+```json
+{
+  "pattern": "capital.*France",
+  "actual": "The capital of France is Paris",
+  "score": 1.0
+}
+```
+
+### JSONata
+
+Queries structured output using JSONata:
+
+```json
+{
+  "query": "$.ingredients[0].name",
+  "expected": "flour",
+  "score": 1.0
+}
+```
+
+## Custom Evaluators
+
+Create custom evaluators for your specific needs:
+
+<CodeGroup>
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/core/api"
+    "github.com/firebase/genkit/go/genkit"
+)
+
+evalOptions := ai.EvaluatorOptions{
+    DisplayName: "Simple Evaluator",
+    Definition:  "Checks if output contains specific keywords",
+    IsBilled:    false,
+}
+
+genkit.DefineEvaluator(g, api.NewName("custom", "keywordChecker"), &evalOptions, 
+    func(ctx context.Context, req *ai.EvaluatorCallbackRequest) (*ai.EvaluatorCallbackResponse, error) {
+        // Check if output contains required keywords
+        output := req.Input.Output.(string)
+        keywords := []string{"Paris", "France"}
+        
+        foundAll := true
+        for _, keyword := range keywords {
+            if !strings.Contains(output, keyword) {
+                foundAll = false
+                break
+            }
+        }
+        
+        score := ai.Score{
+            Id:      "keyword_match",
+            Score:   foundAll,
+            Status:  ai.ScoreStatusPass.String(),
+            Details: map[string]any{
+                "reasoning": fmt.Sprintf("Found all keywords: %v", foundAll),
+            },
+        }
+        
+        return &ai.EvaluatorCallbackResponse{
+            TestCaseId: req.Input.TestCaseId,
+            Evaluation: []ai.Score{score},
+        }, nil
+    })
+```
+
+```python Python
+from genkit.ai import Genkit
+
+@ai.evaluator(name='deliciousness')
+def deliciousness_evaluator(output: str, context: dict) -> dict:
+    """Evaluate how delicious a recipe sounds."""
+    delicious_words = ['tasty', 'delicious', 'savory', 'flavorful']
+    
+    score = sum(1 for word in delicious_words if word in output.lower())
+    
+    return {
+        'score': min(score / len(delicious_words), 1.0),
+        'reasoning': f'Found {score} delicious descriptors',
+    }
+```
+
+</CodeGroup>
+
+## Batch Evaluators
+
+Process multiple test cases efficiently:
+
+<CodeGroup>
+
+```go Go
+genkit.DefineBatchEvaluator(g, api.NewName("custom", "batchChecker"), &evalOptions, 
+    func(ctx context.Context, req *ai.EvaluatorRequest) (*ai.EvaluatorResponse, error) {
+        var evalResponses []ai.EvaluationResult
+        
+        for _, datapoint := range req.Dataset {
+            score := ai.Score{
+                Id:      "testScore",
+                Score:   evaluateDatapoint(datapoint),
+                Status:  ai.ScoreStatusPass.String(),
+                Details: map[string]any{
+                    "reasoning": fmt.Sprintf("Evaluated: %s", datapoint.Input),
+                },
+            }
+            
+            evalResponses = append(evalResponses, ai.EvaluationResult{
+                TestCaseId: datapoint.TestCaseId,
+                Evaluation: []ai.Score{score},
+            })
+        }
+        
+        return &evalResponses, nil
+    })
+```
+
+</CodeGroup>
+
+## Using the Developer UI
+
+The Genkit Developer UI provides visual evaluation tools:
+
+1. **Run the Dev UI**:
+   ```bash
+   genkit start -- go run main.go
+   ```
+
+2. **Navigate to Evaluate tab**
+
+3. **Create a test dataset**:
+   ```json
+   [
+     {
+       "testCaseId": "test1",
+       "input": "What is the capital of France?",
+       "expected": "Paris"
+     },
+     {
+       "testCaseId": "test2",
+       "input": "What is the capital of Japan?",
+       "expected": "Tokyo"
+     }
+   ]
+   ```
+
+4. **Run evaluation** and view results with detailed traces
+
+## Programmatic Evaluation
+
+Evaluate flows programmatically in your tests:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit } from 'genkit';
+
+const testCases = [
+  { input: 'What is 2+2?', expected: '4' },
+  { input: 'What is the capital of France?', expected: 'Paris' },
+];
+
+for (const testCase of testCases) {
+  const result = await myFlow(testCase.input);
+  const passed = result.includes(testCase.expected);
+  
+  console.log(`Test: ${testCase.input}`);
+  console.log(`Expected: ${testCase.expected}`);
+  console.log(`Result: ${result}`);
+  console.log(`Passed: ${passed}\n`);
+}
+```
+
+</CodeGroup>
+
+## Evaluation Metrics
+
+### Accuracy
+
+Measure exact match rate:
+
+```typescript TypeScript
+function calculateAccuracy(results: Array<{ expected: string, actual: string }>) {
+  const correct = results.filter(r => r.actual === r.expected).length;
+  return correct / results.length;
+}
+```
+
+### Semantic Similarity
+
+Use embeddings to measure semantic similarity:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { googleAI } from '@genkit-ai/google-genai';
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+async function semanticSimilarity(
+  expected: string,
+  actual: string
+): Promise<number> {
+  const [expectedEmbed, actualEmbed] = await Promise.all([
+    ai.embed({ embedder: textEmbedding004, content: expected }),
+    ai.embed({ embedder: textEmbedding004, content: actual }),
+  ]);
+  
+  return cosineSimilarity(expectedEmbed.values, actualEmbed.values);
+}
+```
+
+</CodeGroup>
+
+### Retrieval Metrics (RAG)
+
+For RAG applications, measure retrieval quality:
+
+```typescript TypeScript
+interface RetrievalMetrics {
+  precision: number;  // Relevant docs / Retrieved docs
+  recall: number;     // Relevant docs / Total relevant docs
+  mrr: number;        // Mean Reciprocal Rank
+}
+
+function calculateRetrievalMetrics(
+  retrieved: string[],
+  relevant: string[]
+): RetrievalMetrics {
+  const relevantSet = new Set(relevant);
+  const relevantRetrieved = retrieved.filter(doc => relevantSet.has(doc));
+  
+  const precision = relevantRetrieved.length / retrieved.length;
+  const recall = relevantRetrieved.length / relevant.length;
+  
+  // Mean Reciprocal Rank
+  let mrr = 0;
+  for (let i = 0; i < retrieved.length; i++) {
+    if (relevantSet.has(retrieved[i])) {
+      mrr = 1 / (i + 1);
+      break;
+    }
+  }
+  
+  return { precision, recall, mrr };
+}
+```
+
+## A/B Testing
+
+Compare different approaches:
+
+<CodeGroup>
+
+```typescript TypeScript
+async function compareModels(
+  testCases: Array<{ input: string, expected: string }>
+) {
+  const results = {
+    'gemini-2.5-flash': [],
+    'gemini-2.5-pro': [],
+  };
+  
+  for (const testCase of testCases) {
+    for (const model of Object.keys(results)) {
+      const { text } = await ai.generate({
+        model: googleAI.model(model),
+        prompt: testCase.input,
+      });
+      
+      const score = await evaluateOutput(text, testCase.expected);
+      results[model].push(score);
+    }
+  }
+  
+  // Calculate averages
+  const summary = {};
+  for (const [model, scores] of Object.entries(results)) {
+    summary[model] = scores.reduce((a, b) => a + b, 0) / scores.length;
+  }
+  
+  return summary;
+}
+```
+
+</CodeGroup>
+
+## Best Practices
+
+### Create Diverse Test Sets
+
+Cover various scenarios:
+
+```typescript TypeScript
+const testCases = [
+  // Happy path
+  { input: 'What is the capital of France?', expected: 'Paris' },
+  
+  // Edge cases
+  { input: 'What is the capital of a country that doesn\'t exist?', expected: 'unknown' },
+  
+  // Ambiguous inputs
+  { input: 'capital', expected: 'clarification' },
+  
+  // Different phrasings
+  { input: 'France\'s capital city?', expected: 'Paris' },
+];
+```
+
+### Track Metrics Over Time
+
+Store evaluation results:
+
+```typescript TypeScript
+interface EvaluationResult {
+  timestamp: Date;
+  modelVersion: string;
+  averageScore: number;
+  testCases: number;
+}
+
+const results: EvaluationResult[] = [];
+
+async function runAndTrackEvaluation() {
+  const scores = await runEvaluation();
+  
+  results.push({
+    timestamp: new Date(),
+    modelVersion: 'gemini-2.5-flash',
+    averageScore: scores.reduce((a, b) => a + b, 0) / scores.length,
+    testCases: scores.length,
+  });
+  
+  // Save to database
+  await saveResults(results);
+}
+```
+
+### Automate Evaluation in CI/CD
+
+Run evaluations automatically:
+
+```yaml
+# .github/workflows/evaluate.yml
+name: Evaluate AI Quality
+
+on:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'  # Daily
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: npm install
+      - run: npm run evaluate
+      - name: Check quality threshold
+        run: |
+          if [ $(cat results.json | jq '.averageScore') < 0.8 ]; then
+            echo "Quality below threshold"
+            exit 1
+          fi
+```
+
+### Use Human Evaluation
+
+For subjective qualities, involve humans:
+
+```typescript TypeScript
+interface HumanEvaluation {
+  testCaseId: string;
+  output: string;
+  ratings: {
+    accuracy: number;      // 1-5
+    helpfulness: number;   // 1-5
+    tone: number;          // 1-5
+  };
+  feedback: string;
+}
+
+// Present outputs to human reviewers
+// Collect ratings and feedback
+// Use to improve prompts and fine-tune models
+```
+
+## Next Steps
+
+- Learn about [Flows](/concepts/flows) for production deployment
+- Explore [Observability](/concepts/observability) for monitoring
+- Check out [Developer Tools](/devtools/cli) for testing

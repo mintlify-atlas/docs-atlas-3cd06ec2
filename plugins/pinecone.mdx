@@ -1,0 +1,611 @@
+---
+title: 'Pinecone Plugin'
+description: 'Use Pinecone vector database for RAG with Genkit'
+---
+
+# Pinecone Plugin
+
+The `genkitx-pinecone` plugin provides integration with [Pinecone](https://www.pinecone.io/), a managed vector database optimized for production AI applications. Use it for high-performance retrieval-augmented generation (RAG) and semantic search at scale.
+
+## Installation
+
+```bash
+npm install genkitx-pinecone @pinecone-database/pinecone
+```
+
+## Prerequisites
+
+1. **Create Pinecone account**: Sign up at [pinecone.io](https://www.pinecone.io/)
+2. **Get API key**: From the Pinecone console
+3. **Create an index**: Using the Pinecone console or API
+
+## Basic Setup
+
+```typescript
+import { genkit } from 'genkit';
+import { pinecone } from 'genkitx-pinecone';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    pinecone([
+      {
+        indexId: 'my-index',
+        embedder: googleAI.embedder('gemini-embedding-001'),
+      },
+    ]),
+  ],
+});
+```
+
+The API key is automatically read from the `PINECONE_API_KEY` environment variable.
+
+## Configuration
+
+### Plugin Configuration
+
+```typescript
+import { pinecone } from 'genkitx-pinecone';
+import { googleAI } from '@genkit-ai/google-genai';
+import type { PineconeConfiguration } from '@pinecone-database/pinecone';
+
+// Basic configuration
+pinecone([
+  {
+    indexId: 'documents',
+    embedder: googleAI.embedder('gemini-embedding-001'),
+  },
+])
+
+// With explicit API key
+const clientParams: PineconeConfiguration = {
+  apiKey: process.env.PINECONE_API_KEY,
+};
+
+pinecone([
+  {
+    indexId: 'documents',
+    embedder: googleAI.embedder('gemini-embedding-001'),
+    clientParams: clientParams,
+    embedderOptions: {              // Optional embedder config
+      taskType: 'RETRIEVAL_DOCUMENT',
+    },
+  },
+])
+
+// Multiple indexes
+pinecone([
+  {
+    indexId: 'documents',
+    embedder: googleAI.embedder('gemini-embedding-001'),
+  },
+  {
+    indexId: 'code-snippets',
+    embedder: googleAI.embedder('text-embedding-005'),
+  },
+])
+```
+
+### Custom Content Key
+
+By default, document content is stored in the `_content` metadata field:
+
+```typescript
+pinecone([
+  {
+    indexId: 'my-index',
+    embedder: googleAI.embedder('gemini-embedding-001'),
+    contentKey: 'text',  // Custom key instead of '_content'
+  },
+])
+```
+
+## Usage
+
+### Indexing Documents
+
+```typescript
+import { pineconeIndexerRef } from 'genkitx-pinecone';
+import { Document } from 'genkit';
+
+// Define indexer
+const indexer = pineconeIndexerRef({
+  indexId: 'my-index',
+});
+
+// Create documents with metadata
+const documents = [
+  Document.fromText('Genkit is a framework for AI apps.', {
+    category: 'framework',
+    source: 'docs',
+  }),
+  Document.fromText('Pinecone is a vector database.', {
+    category: 'database',
+    source: 'docs',
+  }),
+];
+
+// Index documents
+await ai.index({
+  indexer: indexer,
+  documents: documents,
+});
+```
+
+### Using Namespaces
+
+Pinecone supports namespaces for logical data separation:
+
+```typescript
+// Index to a namespace
+await ai.index({
+  indexer: indexer,
+  documents: documents,
+  options: {
+    namespace: 'production',  // Separate from 'staging', 'test', etc.
+  },
+});
+```
+
+### Retrieving Documents
+
+```typescript
+import { pineconeRetrieverRef } from 'genkitx-pinecone';
+
+// Define retriever
+const retriever = pineconeRetrieverRef({
+  indexId: 'my-index',
+});
+
+// Retrieve relevant documents
+const results = await ai.retrieve({
+  retriever: retriever,
+  query: 'What is Genkit?',
+  options: {
+    k: 5,  // Return top 5 results (max: 1000)
+  },
+});
+
+console.log(results.documents);
+```
+
+### Retrieve from Namespace
+
+```typescript
+const results = await ai.retrieve({
+  retriever: retriever,
+  query: 'vector database',
+  options: {
+    k: 10,
+    namespace: 'production',  // Query specific namespace
+  },
+});
+```
+
+### Filtering with Metadata
+
+```typescript
+const results = await ai.retrieve({
+  retriever: retriever,
+  query: 'database tutorial',
+  options: {
+    k: 10,
+    filter: {
+      category: 'database',       // Metadata filter
+      source: { $in: ['docs', 'blog'] },
+    },
+  },
+});
+```
+
+## RAG Examples
+
+### Simple RAG Flow
+
+```typescript
+import { z } from 'genkit';
+import { pineconeRetrieverRef } from 'genkitx-pinecone';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const retriever = pineconeRetrieverRef({ indexId: 'knowledge-base' });
+
+const ragFlow = ai.defineFlow(
+  {
+    name: 'ragFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (query) => {
+    // Retrieve context
+    const docs = await ai.retrieve({
+      retriever: retriever,
+      query: query,
+      options: { k: 3 },
+    });
+
+    // Build context
+    const context = docs.documents
+      .map(d => d.text)
+      .join('\n\n');
+
+    // Generate with context
+    const response = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Use this context to answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`,
+    });
+
+    return response.text();
+  }
+);
+```
+
+### Multi-namespace RAG
+
+```typescript
+const multiNamespaceFlow = ai.defineFlow(
+  {
+    name: 'multiNamespaceRAG',
+    inputSchema: z.object({
+      query: z.string(),
+      sources: z.array(z.string()),  // Namespace names
+    }),
+  },
+  async ({ query, sources }) => {
+    // Retrieve from multiple namespaces
+    const allDocs = await Promise.all(
+      sources.map(namespace =>
+        ai.retrieve({
+          retriever: retriever,
+          query: query,
+          options: { k: 3, namespace },
+        })
+      )
+    );
+
+    // Combine results
+    const context = allDocs
+      .flatMap(result => result.documents)
+      .map(d => d.text)
+      .join('\n\n');
+
+    // Generate
+    const response = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Context:\n${context}\n\nQuestion: ${query}`,
+    });
+
+    return response.text();
+  }
+);
+```
+
+## Index Management
+
+### Create Index
+
+```typescript
+import { createPineconeIndex } from 'genkitx-pinecone';
+
+await createPineconeIndex({
+  options: {
+    name: 'my-index',
+    dimension: 768,           // Must match embedder dimensions
+    metric: 'cosine',         // 'cosine', 'euclidean', or 'dotproduct'
+    spec: {
+      serverless: {
+        cloud: 'aws',
+        region: 'us-east-1',
+      },
+    },
+  },
+});
+```
+
+### Describe Index
+
+```typescript
+import { describePineconeIndex } from 'genkitx-pinecone';
+
+const indexInfo = await describePineconeIndex({
+  name: 'my-index',
+});
+
+console.log('Index status:', indexInfo.status);
+console.log('Dimension:', indexInfo.dimension);
+console.log('Vector count:', indexInfo.totalRecordCount);
+```
+
+### Delete Index
+
+```typescript
+import { deletePineconeIndex } from 'genkitx-pinecone';
+
+await deletePineconeIndex({
+  name: 'old-index',
+});
+```
+
+## Advanced Features
+
+### Sparse Vectors (Hybrid Search)
+
+Combine dense and sparse vectors for hybrid search:
+
+```typescript
+const results = await ai.retrieve({
+  retriever: retriever,
+  query: 'machine learning',
+  options: {
+    k: 10,
+    sparseVector: {          // BM25 or other sparse embeddings
+      indices: [1, 2, 5],
+      values: [0.5, 0.8, 0.3],
+    },
+  },
+});
+```
+
+### Custom Display Names
+
+```typescript
+import { pineconeRetrieverRef, pineconeIndexerRef } from 'genkitx-pinecone';
+
+const retriever = pineconeRetrieverRef({
+  indexId: 'docs-v2',
+  displayName: 'Production Documentation',
+});
+
+const indexer = pineconeIndexerRef({
+  indexId: 'docs-v2',
+  displayName: 'Production Documentation',
+});
+```
+
+## Complete Example
+
+```typescript
+import { genkit, z } from 'genkit';
+import {
+  pinecone,
+  pineconeRetrieverRef,
+  pineconeIndexerRef,
+  createPineconeIndex,
+  describePineconeIndex,
+} from 'genkitx-pinecone';
+import { googleAI } from '@genkit-ai/google-genai';
+import { Document } from 'genkit';
+
+// Initialize
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    pinecone([{
+      indexId: 'documentation',
+      embedder: googleAI.embedder('gemini-embedding-001'),
+    }]),
+  ],
+});
+
+const indexer = pineconeIndexerRef({ indexId: 'documentation' });
+const retriever = pineconeRetrieverRef({ indexId: 'documentation' });
+
+// Ensure index exists
+try {
+  const info = await describePineconeIndex({ name: 'documentation' });
+  console.log('Index exists:', info.name);
+} catch (error) {
+  console.log('Creating index...');
+  await createPineconeIndex({
+    options: {
+      name: 'documentation',
+      dimension: 768,
+      metric: 'cosine',
+      spec: {
+        serverless: {
+          cloud: 'aws',
+          region: 'us-east-1',
+        },
+      },
+    },
+  });
+}
+
+// Index documents
+const docs = [
+  Document.fromText('Genkit simplifies AI development.', {
+    topic: 'genkit',
+    type: 'overview',
+  }),
+  Document.fromText('Pinecone provides vector search.', {
+    topic: 'pinecone',
+    type: 'overview',
+  }),
+];
+
+await ai.index({
+  indexer: indexer,
+  documents: docs,
+  options: { namespace: 'prod' },
+});
+
+// RAG flow
+const docSearch = ai.defineFlow(
+  {
+    name: 'documentSearch',
+    inputSchema: z.object({
+      query: z.string(),
+      topic: z.string().optional(),
+    }),
+  },
+  async ({ query, topic }) => {
+    const docs = await ai.retrieve({
+      retriever: retriever,
+      query: query,
+      options: {
+        k: 5,
+        namespace: 'prod',
+        filter: topic ? { topic } : undefined,
+      },
+    });
+
+    const context = docs.documents.map(d => d.text).join('\n');
+
+    const { text } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Context:\n${context}\n\nQuestion: ${query}`,
+    });
+
+    return text;
+  }
+);
+```
+
+## Best Practices
+
+### Match Embedder Dimensions
+
+Ensure index dimension matches embedder output:
+
+```typescript
+// Gemini embeddings: 768 dimensions
+createPineconeIndex({
+  options: {
+    name: 'gemini-index',
+    dimension: 768,  // Match embedder
+  },
+})
+```
+
+### Use Namespaces for Isolation
+
+```typescript
+// Separate environments
+await ai.index({ indexer, documents, options: { namespace: 'production' } });
+await ai.index({ indexer, documents, options: { namespace: 'staging' } });
+await ai.index({ indexer, documents, options: { namespace: 'testing' } });
+
+// Separate tenants
+await ai.index({ indexer, documents, options: { namespace: 'tenant-abc' } });
+await ai.index({ indexer, documents, options: { namespace: 'tenant-xyz' } });
+```
+
+### Optimize Metadata
+
+Keep metadata small and indexed fields to a minimum:
+
+```typescript
+// Good: Small, relevant metadata
+Document.fromText('content', {
+  category: 'docs',
+  timestamp: Date.now(),
+})
+
+// Avoid: Large metadata
+Document.fromText('content', {
+  fullDocument: largeObject,  // Don't store full docs in metadata
+  allTags: longArrayOfTags,   // Keep arrays small
+})
+```
+
+### Handle Errors
+
+```typescript
+try {
+  await ai.retrieve({ retriever, query: 'test' });
+} catch (error) {
+  if (error.message.includes('Index not found')) {
+    console.error('Index does not exist');
+  } else if (error.message.includes('PINECONE_API_KEY')) {
+    console.error('API key not configured');
+  } else {
+    console.error('Retrieval error:', error);
+  }
+}
+```
+
+## Configuration Options
+
+### Retriever Options
+
+```typescript
+await ai.retrieve({
+  retriever: retriever,
+  query: 'search query',
+  options: {
+    k: 10,                            // Max results (1-1000)
+    namespace: 'production',          // Query namespace
+    filter: {                         // Metadata filter
+      category: 'docs',
+      year: { $gte: 2023 },
+    },
+    sparseVector: {                   // Hybrid search
+      indices: [1, 2],
+      values: [0.5, 0.8],
+    },
+  },
+});
+```
+
+### Filter Operators
+
+```typescript
+// Equality
+filter: { category: 'docs' }
+
+// Comparison
+filter: { 
+  year: { $gte: 2020, $lte: 2024 },
+  score: { $gt: 0.5 },
+}
+
+// Set membership
+filter: { 
+  category: { $in: ['docs', 'blog'] },
+  status: { $nin: ['draft', 'archived'] },
+}
+
+// Logical operators
+filter: {
+  $and: [
+    { category: 'docs' },
+    { year: { $gte: 2023 } },
+  ],
+}
+```
+
+## Troubleshooting
+
+### API Key Issues
+
+**Error:** `Please pass in the API key or set PINECONE_API_KEY`
+
+**Solution:** Set environment variable:
+```bash
+export PINECONE_API_KEY=your-api-key
+```
+
+### Dimension Mismatch
+
+**Error:** `Dimension mismatch`
+
+**Solution:** Ensure index dimension matches embedder output (e.g., 768 for Gemini).
+
+### Index Not Ready
+
+**Solution:** Wait for index to be ready after creation:
+```typescript
+let status = 'Initializing';
+while (status !== 'Ready') {
+  const info = await describePineconeIndex({ name: 'my-index' });
+  status = info.status.state;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+}
+```
+
+## Links
+
+- [Pinecone Documentation](https://docs.pinecone.io/)
+- [Pinecone Console](https://app.pinecone.io/)
+- [Pinecone Node.js Client](https://github.com/pinecone-io/pinecone-ts-client)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/pinecone)

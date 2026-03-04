@@ -1,0 +1,401 @@
+---
+title: 'Firebase Plugin'
+description: 'Deploy Genkit applications to Firebase and enable telemetry'
+---
+
+# Firebase Plugin
+
+The `@genkit-ai/firebase` plugin provides Firebase integration for Genkit, including deployment to Cloud Functions for Firebase and comprehensive telemetry/monitoring capabilities.
+
+## Installation
+
+```bash
+npm install @genkit-ai/firebase
+```
+
+## Features
+
+- **Telemetry & Monitoring** - Production observability in Firebase console
+- **Durable Streaming** - Persistent stream state with Firestore or Realtime Database
+- **Cloud Functions** - Deploy flows as Firebase Cloud Functions
+- **Firebase Integration** - Seamless integration with Firebase services
+
+## Basic Setup
+
+### Enable Telemetry
+
+```typescript
+import { genkit } from 'genkit';
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+
+enableFirebaseTelemetry();
+
+const ai = genkit({
+  plugins: [
+    // Your other plugins
+  ],
+});
+```
+
+This enables:
+- Request tracing
+- Performance metrics
+- Error tracking
+- Usage analytics
+
+View telemetry in the [Firebase Console](https://console.firebase.google.com) under Genkit.
+
+## Durable Streaming (Beta)
+
+Durable streaming persists stream state, allowing clients to disconnect and reconnect without losing progress. The plugin provides two `StreamManager` implementations:
+
+### Firestore Stream Manager
+
+Persists stream state in Google Cloud Firestore:
+
+```typescript
+import { expressHandler } from '@genkit-ai/express';
+import { FirestoreStreamManager } from '@genkit-ai/firebase/beta';
+import express from 'express';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// Initialize Firebase
+const fApp = initializeApp();
+
+// Create Firestore stream manager
+const firestore = new FirestoreStreamManager({
+  firebaseApp: fApp,
+  db: getFirestore(fApp),
+  collection: 'streams',  // Collection to store streams
+});
+
+// Use with Express handler
+const app = express();
+app.use(express.json());
+
+app.post('/myDurableFlow', expressHandler(myFlow, { 
+  streamManager: firestore 
+}));
+
+app.listen(8080);
+```
+
+**Firestore Limitations:**
+- Maximum document size: **1MB** (strict Firestore limit)
+- If stream output exceeds 1MB, the flow will fail
+- Store entire stream history in a single document
+
+### Realtime Database Stream Manager
+
+Persists stream state in Firebase Realtime Database:
+
+```typescript
+import { RtdbStreamManager } from '@genkit-ai/firebase/beta';
+import { initializeApp } from 'firebase-admin/app';
+
+const fApp = initializeApp();
+
+// Create RTDB stream manager
+const rtdb = new RtdbStreamManager({
+  firebaseApp: fApp,
+  refPrefix: 'streams',  // Database path prefix
+});
+
+app.post('/myDurableRtdbFlow', expressHandler(myFlow, { 
+  streamManager: rtdb 
+}));
+```
+
+**RTDB Considerations:**
+- No strict 1MB limit like Firestore
+- Better for larger streams
+- May impact performance with very large streams
+- Subject to other RTDB quotas
+
+### Client Usage
+
+Clients can connect and reconnect to durable streams:
+
+```typescript
+import { streamFlow } from 'genkit/beta/client';
+
+// Start a new stream
+const result = streamFlow({
+  url: 'http://localhost:8080/myDurableFlow',
+  input: 'tell me a long story',
+});
+
+// Get and save the stream ID
+const streamId = await result.streamId;
+console.log('Stream ID:', streamId);
+
+// Process chunks
+for await (const chunk of result.stream) {
+  console.log('Chunk:', chunk);
+}
+
+// ... later, reconnect to the same stream ...
+const reconnectedResult = streamFlow({
+  url: 'http://localhost:8080/myDurableFlow',
+  streamId: streamId,  // Reconnect with saved ID
+});
+
+for await (const chunk of reconnectedResult.stream) {
+  console.log('Resumed chunk:', chunk);
+}
+```
+
+## Deployment
+
+### Deploy to Cloud Functions for Firebase
+
+**1. Initialize Firebase project:**
+
+```bash
+firebase init functions
+```
+
+**2. Define flows in `functions/src/index.ts`:**
+
+```typescript
+import { genkit } from 'genkit';
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+import { googleAI } from '@genkit-ai/google-genai';
+import * as functions from 'firebase-functions';
+import { z } from 'genkit';
+
+enableFirebaseTelemetry();
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const generateStory = ai.defineFlow(
+  {
+    name: 'generateStory',
+    inputSchema: z.object({ theme: z.string() }),
+    outputSchema: z.string(),
+  },
+  async ({ theme }) => {
+    const { text } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: `Write a short story about ${theme}`,
+    });
+    return text;
+  }
+);
+
+// Export as Cloud Function
+export const storyFlow = functions.https.onCall(async (data, context) => {
+  return await generateStory(data);
+});
+```
+
+**3. Deploy:**
+
+```bash
+firebase deploy --only functions
+```
+
+### Using with Express
+
+For HTTP endpoints, combine with the Express plugin:
+
+```typescript
+import { startFlowServer } from '@genkit-ai/express';
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+import { genkit } from 'genkit';
+
+enableFirebaseTelemetry();
+
+const ai = genkit({
+  plugins: [/* your plugins */],
+});
+
+const myFlow = ai.defineFlow(
+  { name: 'myFlow' },
+  async (input) => {
+    // Flow logic
+    return result;
+  }
+);
+
+// Start server with Firebase telemetry enabled
+startFlowServer({
+  flows: [myFlow],
+  port: 3000,
+});
+```
+
+## Telemetry Features
+
+### Automatic Tracking
+
+When Firebase telemetry is enabled, Genkit automatically tracks:
+
+- **Flow executions** - Start time, duration, success/failure
+- **Model calls** - Provider, model name, tokens used, latency
+- **Tool calls** - Tool name, execution time, errors
+- **Errors** - Stack traces, error types, frequency
+- **Custom traces** - User-defined trace spans
+
+### View in Firebase Console
+
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Select your project
+3. Navigate to **Genkit** section
+4. View:
+   - Flow performance metrics
+   - Model usage and costs
+   - Error rates and logs
+   - Request volumes
+   - Latency percentiles
+
+### Custom Traces
+
+Add custom tracing to your flows:
+
+```typescript
+import { runInNewSpan } from 'genkit';
+
+const myFlow = ai.defineFlow(
+  { name: 'myFlow' },
+  async (input) => {
+    // Custom trace span
+    const result = await runInNewSpan(
+      { name: 'processData' },
+      async () => {
+        // Processing logic
+        return processedData;
+      }
+    );
+    
+    return result;
+  }
+);
+```
+
+## Configuration Options
+
+### Telemetry Options
+
+```typescript
+enableFirebaseTelemetry({
+  projectId: 'my-firebase-project',  // Optional: auto-detected
+  // Additional configuration options
+});
+```
+
+### Stream Manager Options
+
+**Firestore:**
+
+```typescript
+new FirestoreStreamManager({
+  firebaseApp: fApp,          // Required: Firebase app instance
+  db: getFirestore(fApp),     // Required: Firestore instance
+  collection: 'streams',      // Required: Collection name
+})
+```
+
+**Realtime Database:**
+
+```typescript
+new RtdbStreamManager({
+  firebaseApp: fApp,          // Required: Firebase app instance
+  refPrefix: 'streams',       // Required: Database path prefix
+})
+```
+
+## Best Practices
+
+### Production Monitoring
+
+1. **Always enable telemetry** in production:
+```typescript
+if (process.env.NODE_ENV === 'production') {
+  enableFirebaseTelemetry();
+}
+```
+
+2. **Set up alerts** in Firebase Console for:
+   - High error rates
+   - Increased latency
+   - Usage spikes
+
+3. **Review metrics regularly** to identify:
+   - Performance bottlenecks
+   - Cost optimization opportunities
+   - Usage patterns
+
+### Durable Streaming
+
+1. **Choose the right storage**:
+   - **Firestore** - Most use cases, strict 1MB limit
+   - **RTDB** - Larger streams, more flexible
+
+2. **Handle stream limits**:
+```typescript
+try {
+  const result = await streamFlow({ url, input });
+  for await (const chunk of result.stream) {
+    console.log(chunk);
+  }
+} catch (error) {
+  if (error.message.includes('1MB')) {
+    console.error('Stream exceeded Firestore limit');
+    // Consider using RTDB or chunking differently
+  }
+}
+```
+
+3. **Clean up old streams** periodically:
+```typescript
+// Firestore cleanup
+const oldStreams = await db.collection('streams')
+  .where('createdAt', '<', oneWeekAgo)
+  .get();
+
+for (const doc of oldStreams.docs) {
+  await doc.ref.delete();
+}
+```
+
+### Security
+
+Secure your Cloud Functions:
+
+```typescript
+import * as functions from 'firebase-functions';
+
+export const secureFlow = functions.https.onCall(async (data, context) => {
+  // Check authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'User must be authenticated'
+    );
+  }
+  
+  // Check authorization
+  if (!context.auth.token.admin) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'User must be admin'
+    );
+  }
+  
+  return await myFlow(data);
+});
+```
+
+## Links
+
+- [Firebase Console](https://console.firebase.google.com)
+- [Deploying Genkit with Firebase](https://genkit.dev/docs/deployment/firebase/)
+- [Genkit Monitoring](/concepts/observability)
+- [Cloud Functions Documentation](https://firebase.google.com/docs/functions)
+- [Firestore Documentation](https://firebase.google.com/docs/firestore)
+- [Realtime Database Documentation](https://firebase.google.com/docs/database)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/firebase)

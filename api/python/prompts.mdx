@@ -1,0 +1,71 @@
+---
+title: Prompts API
+description: Prompts API reference (Python)
+---
+
+Prompts encapsulate model configuration and templates.
+
+## Loading Prompts
+
+```python
+from genkit import Genkit
+
+ai = Genkit(
+    prompt_dir="./prompts",  # Auto-load .prompt files
+)
+```
+
+## Executing Prompts
+
+```python
+# Get a loaded prompt
+prompt = ai.registry.get_prompt("myPrompt")
+
+# Execute
+response = await prompt.execute(
+    input={"name": "Alice"},
+)
+```
+
+## ExecutablePrompt
+
+```python
+from genkit import ExecutablePrompt
+
+prompt: ExecutablePrompt = ai.registry.get_prompt("greeting")
+
+response = await prompt.execute(
+    input={"name": "Bob"},
+    config={"temperature": 0.8},
+)
+```
+
+## Prompt Configuration
+
+Prompts are typically defined in `.prompt` files:
+
+```yaml
+---
+model: gemini-2.0-flash
+input:
+  schema:
+    name: string
+output:
+  format: json
+  schema:
+    greeting: string
+---
+Say hello to {{ name }}
+```
+
+## PromptGenerateOptions
+
+```python
+from genkit import PromptGenerateOptions
+
+options = PromptGenerateOptions(
+    model="gemini-2.0-flash",
+    config={"temperature": 0.7},
+    tools=["my_tool"],
+)
+```

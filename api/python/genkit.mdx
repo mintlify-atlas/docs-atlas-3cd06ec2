@@ -1,0 +1,375 @@
+---
+title: Genkit Class
+description: Main Genkit class API reference (Python)
+---
+
+The `Genkit` class is the primary entry point for using Genkit in Python.
+
+## Initialization
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleAI
+
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model="gemini-2.0-flash",
+    prompt_dir="./prompts",
+)
+```
+
+### Parameters
+
+<ParamField path="plugins" type="list[Plugin] | None">
+  List of plugins to initialize
+</ParamField>
+
+<ParamField path="model" type="str | None">
+  Default model name to use
+</ParamField>
+
+<ParamField path="prompt_dir" type="str | Path | None">
+  Directory to load prompts from (defaults to `./prompts` if it exists)
+</ParamField>
+
+<ParamField path="reflection_server_spec" type="ServerSpec | None">
+  Reflection server configuration
+</ParamField>
+
+## generate()
+
+Generates text or structured data using a model.
+
+```python
+# Simple text generation
+response = await ai.generate(
+    model="gemini-2.0-flash",
+    prompt="Tell me a joke about programming.",
+)
+print(response.text)
+```
+
+```python
+# Structured output
+from genkit import Output
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+response = await ai.generate(
+    prompt="Tell me about a person",
+    output=Output(schema=Person),
+)
+person = response.output  # Type: Person
+```
+
+### Parameters
+
+<ParamField path="model" type="str | None">
+  Model name (e.g., `"gemini-2.0-flash"`)
+</ParamField>
+
+<ParamField path="prompt" type="str | Part | list[Part] | None">
+  User prompt (text, Part, or list of Parts)
+</ParamField>
+
+<ParamField path="system" type="str | Part | list[Part] | None">
+  System instructions
+</ParamField>
+
+<ParamField path="messages" type="list[Message] | None">
+  Conversation history
+</ParamField>
+
+<ParamField path="tools" type="list[str] | None">
+  Tool names to enable
+</ParamField>
+
+<ParamField path="tool_choice" type="ToolChoice | None">
+  Control tool usage (`"auto"`, `"required"`, `"none"`)
+</ParamField>
+
+<ParamField path="config" type="dict | GenerationCommonConfig | None">
+  Generation configuration (temperature, max_tokens, etc.)
+</ParamField>
+
+<ParamField path="output" type="Output[T] | OutputConfig | dict | None">
+  Output configuration for structured data
+  
+  Use `Output(schema=YourModel)` for typed responses
+</ParamField>
+
+<ParamField path="docs" type="list[DocumentData] | None">
+  Context documents for grounding
+</ParamField>
+
+<ParamField path="on_chunk" type="ModelStreamingCallback | None">
+  Callback for streaming chunks
+</ParamField>
+
+<ParamField path="use" type="list[ModelMiddleware] | None">
+  Middleware to apply
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="GenerateResponseWrapper[T]">
+  Response wrapper with `.text`, `.output`, and `.message` properties
+</ResponseField>
+
+## generate_stream()
+
+Generates with streaming.
+
+```python
+async for chunk in ai.generate_stream(
+    prompt="Tell me a story",
+):
+    if chunk.done:
+        print("\nDone:", chunk.response.text)
+    else:
+        print(chunk.content, end="")
+```
+
+### Returns
+
+<ResponseField name="async_iterator" type="AsyncIterator[GenerateStreamResponse]">
+  Async iterator yielding chunks
+  
+  **GenerateStreamResponse fields:**
+  - `done: bool` - True when complete
+  - `response: GenerateResponseWrapper` - Final response (when done)
+  - `content: list[Part]` - Chunk content (when !done)
+</ResponseField>
+
+## flow()
+
+Decorator to define a flow.
+
+```python
+@ai.flow()
+async def summarize_article(url: str) -> str:
+    """Summarizes an article from a URL."""
+    content = await fetch_article(url)
+    
+    response = await ai.generate(
+        prompt=f"Summarize this article: {content}",
+    )
+    
+    return response.text
+
+# Call the flow
+result = await summarize_article("https://example.com/article")
+```
+
+### Parameters
+
+<ParamField path="name" type="str | None">
+  Flow name (defaults to function name)
+</ParamField>
+
+<ParamField path="input_schema" type="type | dict | None">
+  Input schema for validation
+</ParamField>
+
+<ParamField path="output_schema" type="type | dict | None">
+  Output schema for validation
+</ParamField>
+
+### Returns
+
+<ResponseField name="decorator" type="Callable">
+  Flow decorator that wraps the function
+</ResponseField>
+
+## tool()
+
+Decorator to define a tool.
+
+```python
+@ai.tool()
+async def get_weather(city: str) -> dict:
+    """Gets the current weather for a city."""
+    # Tool implementation
+    return {"temperature": 72, "conditions": "sunny"}
+
+# Use in generation
+response = await ai.generate(
+    prompt="What's the weather in Paris?",
+    tools=["get_weather"],
+)
+```
+
+### Parameters
+
+<ParamField path="name" type="str | None">
+  Tool name (defaults to function name)
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Tool description (defaults to function docstring)
+</ParamField>
+
+### Returns
+
+<ResponseField name="decorator" type="Callable">
+  Tool decorator
+</ResponseField>
+
+## embed()
+
+Generates embeddings.
+
+```python
+embeddings = await ai.embed(
+    embedder="text-embedding-004",
+    content="Hello, world!",
+)
+print(embeddings[0].embedding)  # [0.123, 0.456, ...]
+```
+
+### Parameters
+
+<ParamField path="embedder" type="str | EmbedderRef">
+  Embedder name or reference
+</ParamField>
+
+<ParamField path="content" type="str | list[str] | list[DocumentData]">
+  Text or documents to embed
+</ParamField>
+
+<ParamField path="options" type="dict | None">
+  Embedder-specific options
+</ParamField>
+
+### Returns
+
+<ResponseField name="embeddings" type="list[Embedding]">
+  List of embedding vectors
+</ResponseField>
+
+## retrieve()
+
+Retrieves documents.
+
+```python
+docs = await ai.retrieve(
+    retriever="my_retriever",
+    query="What is Genkit?",
+    options={"k": 5},
+)
+```
+
+### Parameters
+
+<ParamField path="retriever" type="str | RetrieverRef">
+  Retriever name or reference
+</ParamField>
+
+<ParamField path="query" type="str | DocumentData">
+  Query text or document
+</ParamField>
+
+<ParamField path="options" type="dict | None">
+  Retriever-specific options
+</ParamField>
+
+### Returns
+
+<ResponseField name="documents" type="list[Document]">
+  Retrieved documents
+</ResponseField>
+
+## evaluate()
+
+Runs an evaluator on a dataset.
+
+```python
+results = await ai.evaluate(
+    evaluator="faithfulness",
+    dataset=[
+        {
+            "input": "What is AI?",
+            "output": "AI is artificial intelligence",
+            "context": ["AI stands for artificial intelligence"],
+        },
+    ],
+)
+```
+
+### Parameters
+
+<ParamField path="evaluator" type="str | EvaluatorRef">
+  Evaluator name or reference
+</ParamField>
+
+<ParamField path="dataset" type="list[BaseDataPoint]">
+  Dataset to evaluate
+</ParamField>
+
+<ParamField path="options" type="dict | None">
+  Evaluator-specific options
+</ParamField>
+
+### Returns
+
+<ResponseField name="results" type="list[EvalResponse]">
+  Evaluation results
+</ResponseField>
+
+## Example: Complete Application
+
+```python
+import asyncio
+from genkit import Genkit, Output
+from genkit.plugins.google_genai import GoogleAI
+from pydantic import BaseModel
+
+ai = Genkit(
+    plugins=[GoogleAI()],
+    model="gemini-2.0-flash",
+)
+
+@ai.tool()
+async def get_weather(city: str) -> dict:
+    """Gets weather for a city."""
+    return {"temperature": 72, "conditions": "sunny"}
+
+@ai.flow()
+async def assistant(query: str) -> str:
+    """AI assistant with tool access."""
+    response = await ai.generate(
+        prompt=query,
+        tools=["get_weather"],
+    )
+    return response.text
+
+class Story(BaseModel):
+    title: str
+    content: str
+
+async def main():
+    # Use tool-enabled flow
+    result = await assistant("What's the weather in Paris?")
+    print(result)
+    
+    # Generate structured output
+    response = await ai.generate(
+        prompt="Write a short story",
+        output=Output(schema=Story),
+    )
+    story: Story = response.output
+    print(f"Title: {story.title}")
+    
+    # Stream results
+    async for chunk in ai.generate_stream(
+        prompt="Count to 10",
+    ):
+        if not chunk.done:
+            print(chunk.content, end="")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```

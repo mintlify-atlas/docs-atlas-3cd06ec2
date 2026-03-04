@@ -1,0 +1,452 @@
+---
+title: Firebase Deployment
+description: Deploy Genkit flows to Cloud Functions for Firebase
+---
+
+# Firebase Deployment
+
+Deploy your Genkit flows to Cloud Functions for Firebase with built-in authentication, monitoring, and Firebase ecosystem integration.
+
+## Overview
+
+Cloud Functions for Firebase provides:
+
+- **Managed infrastructure** - No server management
+- **Automatic scaling** - From zero to millions of requests
+- **Firebase integration** - Auth, Firestore, Realtime Database
+- **Built-in monitoring** - Integrated telemetry with Firebase
+
+## Prerequisites
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Login to Firebase
+firebase login
+
+# Install dependencies
+npm install genkit @genkit-ai/firebase @genkit-ai/google-genai
+npm install firebase-functions firebase-admin
+```
+
+## Project Setup
+
+### 1. Initialize Firebase Project
+
+```bash
+firebase init functions
+```
+
+Select:
+- **Language:** TypeScript
+- **ESLint:** Yes
+- **Install dependencies:** Yes
+
+### 2. Configure Genkit
+
+Create or update `functions/src/index.ts`:
+
+```typescript functions/src/index.ts
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+import { vertexAI } from '@genkit-ai/google-genai';
+import { onCallGenkit } from 'firebase-functions/https';
+import { genkit, z } from 'genkit';
+
+// Enable Firebase telemetry for monitoring
+enableFirebaseTelemetry();
+
+const ai = genkit({
+  plugins: [vertexAI()],
+});
+
+// Define a flow
+const jokeFlow = ai.defineFlow(
+  {
+    name: 'jokeFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (subject) => {
+    const llmResponse = await ai.generate({
+      model: vertexAI.model('gemini-2.5-flash'),
+      prompt: `Tell me a joke about ${subject}`,
+    });
+    return llmResponse.text;
+  }
+);
+
+// Export as Cloud Function
+export const joke = onCallGenkit(jokeFlow);
+```
+
+## Authentication
+
+### Using Firebase Auth
+
+```typescript
+export const secureJoke = onCallGenkit(
+  {
+    authPolicy: (auth) => {
+      // Require verified email
+      if (!auth?.token?.email_verified) {
+        throw new Error('Email not verified');
+      }
+      // Check custom claims
+      if (!auth?.token?.admin) {
+        throw new Error('Admin access required');
+      }
+      return true;
+    },
+  },
+  jokeFlow
+);
+```
+
+### Input Validation
+
+```typescript
+const authFlow = ai.defineFlow(
+  {
+    name: 'authFlow',
+    inputSchema: z.object({ 
+      uid: z.string(), 
+      input: z.string() 
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ input }) => input.toUpperCase()
+);
+
+export const auth = onCallGenkit(
+  {
+    // Ensure the user ID matches the authenticated user
+    authPolicy: (auth, input) => {
+      return !!auth && auth.uid === input.uid;
+    },
+  },
+  authFlow
+);
+```
+
+## Streaming Responses
+
+Cloud Functions automatically handles streaming:
+
+```typescript
+const streamingFlow = ai.defineFlow(
+  {
+    name: 'streamer',
+    inputSchema: z.number(),
+    outputSchema: z.string(),
+    streamSchema: z.object({ count: z.number() }),
+  },
+  async (count, { sendChunk }) => {
+    let i = 0;
+    for (; i < count; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      sendChunk({ count: i });
+    }
+    return `done: ${count}, streamed: ${i} times`;
+  }
+);
+
+// onCallGenkit automatically handles streaming
+export const streamer = onCallGenkit(
+  {
+    invoker: 'private', // Requires IAM authentication
+  },
+  streamingFlow
+);
+```
+
+## Configuration
+
+### Environment Variables and Secrets
+
+```typescript
+export const secureFlow = onCallGenkit(
+  {
+    secrets: ['GEMINI_API_KEY'], // Reference Cloud Secret Manager
+  },
+  myFlow
+);
+```
+
+Set secrets:
+
+```bash
+firebase functions:secrets:set GEMINI_API_KEY
+```
+
+### Memory and Timeout
+
+```typescript
+export const heavyFlow = onCallGenkit(
+  {
+    timeoutSeconds: 540,    // 9 minutes (max for gen 2)
+    memory: '2GiB',         // Allocate more memory
+    cpu: 2,                 // Multiple CPUs
+  },
+  flowDefinition
+);
+```
+
+### CORS Configuration
+
+```typescript
+import { onRequest } from 'firebase-functions/https';
+import * as cors from 'cors';
+
+const corsHandler = cors({ origin: true });
+
+export const publicEndpoint = onRequest((req, res) => {
+  corsHandler(req, res, async () => {
+    const result = await myFlow.run(req.body.subject);
+    res.json(result);
+  });
+});
+```
+
+## Deployment
+
+### Deploy All Functions
+
+```bash
+# Build and deploy
+firebase deploy --only functions
+```
+
+### Deploy Specific Function
+
+```bash
+firebase deploy --only functions:joke
+```
+
+### View Logs
+
+```bash
+firebase functions:log
+
+# Follow logs in real-time
+firebase functions:log --only joke
+```
+
+## Testing Locally
+
+### Using Emulators
+
+```bash
+# Start Firebase emulators
+firebase emulators:start
+```
+
+The emulator provides:
+- Functions: `http://localhost:5001`
+- Firestore: `http://localhost:8080`
+- Auth: `http://localhost:9099`
+
+### Call Function Locally
+
+```bash
+curl -X POST http://localhost:5001/PROJECT_ID/us-central1/joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": "programming"}'
+```
+
+## Durable Streaming (Beta)
+
+Persist stream state to handle reconnections:
+
+```typescript
+import { expressHandler } from '@genkit-ai/express';
+import { FirestoreStreamManager } from '@genkit-ai/firebase/beta';
+import express from 'express';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+const fApp = initializeApp();
+const streamManager = new FirestoreStreamManager({
+  firebaseApp: fApp,
+  db: getFirestore(fApp),
+  collection: 'streams',
+});
+
+const app = express();
+app.use(express.json());
+
+app.post('/stream', expressHandler(myFlow, { streamManager }));
+```
+
+Clients receive a stream ID in the `X-Genkit-Stream-Id` header and can reconnect.
+
+**Limitations:**
+- Firestore documents have a 1MB size limit
+- Large streams may exceed this limit
+
+### Alternative: Realtime Database
+
+```typescript
+import { RtdbStreamManager } from '@genkit-ai/firebase/beta';
+
+const rtdbManager = new RtdbStreamManager({
+  firebaseApp: fApp,
+  refPrefix: 'streams',
+});
+
+app.post('/stream-rtdb', expressHandler(myFlow, { 
+  streamManager: rtdbManager 
+}));
+```
+
+## Monitoring with Firebase
+
+### Enable Telemetry
+
+```typescript
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+
+enableFirebaseTelemetry({
+  projectId: 'your-project-id',
+  // Optional: configure sampling
+  // sampleRate: 0.1, // Sample 10% of traces
+});
+```
+
+### View Traces
+
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Select your project
+3. Navigate to **Performance** or **Cloud Trace**
+4. View detailed execution traces for each flow
+
+## Production Best Practices
+
+### 1. Use Vertex AI (Not Google AI)
+
+For production, use Vertex AI instead of Google AI:
+
+```typescript
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()], // ✅ Uses GCP project quota
+});
+```
+
+### 2. Set Appropriate Timeouts
+
+```typescript
+// Default timeout is 60 seconds - too short for AI
+export const myFlow = onCallGenkit(
+  {
+    timeoutSeconds: 300, // 5 minutes for AI operations
+  },
+  flowDefinition
+);
+```
+
+### 3. Handle Errors Gracefully
+
+```typescript
+import { UserFacingError } from 'genkit';
+
+const safeFlow = ai.defineFlow(
+  { name: 'safeFlow' },
+  async (input) => {
+    try {
+      return await ai.generate({ prompt: input });
+    } catch (error) {
+      console.error('Generation failed:', error);
+      throw new UserFacingError(
+        'INTERNAL',
+        'Failed to generate response. Please try again.'
+      );
+    }
+  }
+);
+```
+
+### 4. Use IAM for Service-to-Service Calls
+
+```typescript
+export const internalFlow = onCallGenkit(
+  {
+    invoker: 'private', // Requires IAM authentication
+  },
+  flowDefinition
+);
+```
+
+Allow access:
+
+```bash
+gcloud functions add-invoker-policy-binding joke \
+  --member="serviceAccount:SERVICE_ACCOUNT" \
+  --region="us-central1"
+```
+
+## Complete Example
+
+See the full Firebase Functions example:
+
+```bash
+cd js/testapps/firebase-functions-sample1
+npm install
+npm run build
+firebase emulators:start
+```
+
+Source: `js/testapps/firebase-functions-sample1/functions/src/index.ts`
+
+## Troubleshooting
+
+### Function Timeout
+
+**Problem:** Function times out during AI generation.
+
+**Solution:** Increase timeout:
+
+```typescript
+export const myFlow = onCallGenkit(
+  { timeoutSeconds: 540 }, // Max for gen 2
+  flowDefinition
+);
+```
+
+### Out of Memory
+
+**Problem:** Function crashes with OOM error.
+
+**Solution:** Increase memory allocation:
+
+```typescript
+export const myFlow = onCallGenkit(
+  { memory: '2GiB' },
+  flowDefinition
+);
+```
+
+### Cold Starts
+
+**Problem:** First request is slow.
+
+**Solution:** Use min instances (costs more):
+
+```typescript
+export const myFlow = onCallGenkit(
+  { minInstances: 1 }, // Keep 1 instance warm
+  flowDefinition
+);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Express Plugin" icon="node-js" href="/plugins/express">
+    Learn about Express.js integration
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/observability">
+    Set up production monitoring
+  </Card>
+</CardGroup>

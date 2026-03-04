@@ -1,0 +1,483 @@
+---
+title: 'Ollama Plugin'
+description: 'Run local AI models with Ollama and Genkit'
+---
+
+# Ollama Plugin
+
+The `genkitx-ollama` plugin enables you to run AI models locally using [Ollama](https://ollama.ai). This is ideal for development, testing, and applications that need to run models on-premise without external API calls.
+
+## Installation
+
+```bash
+npm install genkitx-ollama
+```
+
+## Prerequisites
+
+1. **Install Ollama**: Download and install from [ollama.ai](https://ollama.ai)
+2. **Pull models**: Download the models you want to use
+
+```bash
+# Pull a model (example: Gemma)
+ollama pull gemma
+
+# Pull other popular models
+ollama pull llama3
+ollama pull mistral
+ollama pull codellama
+```
+
+3. **Start Ollama server**: The server runs automatically after installation, or start it manually:
+
+```bash
+ollama serve
+```
+
+Default server address: `http://localhost:11434`
+
+## Basic Setup
+
+```typescript
+import { genkit } from 'genkit';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      models: [{ name: 'gemma' }],
+      serverAddress: 'http://127.0.0.1:11434', // default
+    }),
+  ],
+});
+
+const { text } = await ai.generate({
+  prompt: 'Tell me about local AI models',
+  model: 'ollama/gemma',
+});
+
+console.log(text);
+```
+
+## Configuration
+
+### Plugin Options
+
+```typescript
+ollama({
+  models: [
+    { 
+      name: 'gemma',
+      type: 'chat',           // 'chat' or 'generate' (default: 'chat')
+      supports: {
+        tools: true,          // Enable tool calling
+      },
+    },
+    { 
+      name: 'llama3',
+      type: 'chat',
+    },
+    {
+      name: 'codellama',
+      type: 'generate',       // Use generate API for non-chat models
+    },
+  ],
+  embedders: [
+    {
+      name: 'nomic-embed-text',
+      dimensions: 768,        // Required for embedders
+    },
+  ],
+  serverAddress: 'http://localhost:11434',
+  requestHeaders: {         // Optional custom headers
+    'Authorization': 'Bearer token',
+  },
+})
+```
+
+### Model Configuration
+
+```typescript
+const response = await ai.generate({
+  model: 'ollama/gemma',
+  prompt: 'Your prompt',
+  config: {
+    temperature: 0.8,        // Default: 0.8 (0.0-1.0)
+    topK: 40,                // Default: 40
+    topP: 0.9,               // Default: 0.9 (0.0-1.0)
+    maxOutputTokens: 2048,   // Maps to num_predict
+    stopSequences: ['END'],  // Stop generation sequences
+  },
+});
+```
+
+## Popular Models
+
+### Chat Models
+
+```typescript
+ollama({
+  models: [
+    { name: 'llama3' },        // Meta's Llama 3
+    { name: 'gemma' },         // Google's Gemma
+    { name: 'mistral' },       // Mistral AI
+    { name: 'mixtral' },       // Mistral's mixture-of-experts
+    { name: 'phi3' },          // Microsoft's Phi-3
+    { name: 'qwen2' },         // Alibaba's Qwen
+  ],
+})
+```
+
+### Code Models
+
+```typescript
+ollama({
+  models: [
+    { name: 'codellama', type: 'chat' },
+    { name: 'deepseek-coder' },
+    { name: 'starcoder2' },
+  ],
+})
+```
+
+### Embedding Models
+
+```typescript
+ollama({
+  embedders: [
+    { name: 'nomic-embed-text', dimensions: 768 },
+    { name: 'mxbai-embed-large', dimensions: 1024 },
+    { name: 'all-minilm', dimensions: 384 },
+  ],
+})
+```
+
+## Usage Examples
+
+### Text Generation
+
+```typescript
+import { genkit } from 'genkit';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      models: [{ name: 'llama3' }],
+    }),
+  ],
+});
+
+const response = await ai.generate({
+  model: 'ollama/llama3',
+  prompt: 'Explain how local AI models work',
+});
+
+console.log(response.text);
+```
+
+### Multi-turn Conversation
+
+```typescript
+const response = await ai.generate({
+  model: 'ollama/gemma',
+  messages: [
+    { role: 'user', content: [{ text: 'What is Ollama?' }] },
+    { role: 'model', content: [{ text: 'Ollama is a tool for running AI models locally.' }] },
+    { role: 'user', content: [{ text: 'How do I install it?' }] },
+  ],
+});
+
+console.log(response.text);
+```
+
+### Tool Calling
+
+```typescript
+import { z } from 'genkit';
+
+const getWeather = ai.defineTool(
+  {
+    name: 'getWeather',
+    description: 'Get current weather for a location',
+    inputSchema: z.object({
+      location: z.string(),
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ location }) => {
+    return `Weather in ${location}: Sunny, 72°F`;
+  }
+);
+
+const response = await ai.generate({
+  model: 'ollama/llama3',
+  prompt: 'What\'s the weather in San Francisco?',
+  tools: [getWeather],
+});
+
+console.log(response.text);
+```
+
+### Image Input (Multimodal)
+
+```typescript
+const response = await ai.generate({
+  model: 'ollama/llava',  // Use a multimodal model
+  prompt: [
+    { text: 'What do you see in this image?' },
+    { media: { url: 'data:image/jpeg;base64,...' } },  // Base64 image
+  ],
+});
+
+console.log(response.text);
+```
+
+### Embeddings
+
+```typescript
+import { genkit } from 'genkit';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    ollama({
+      embedders: [
+        { name: 'nomic-embed-text', dimensions: 768 },
+      ],
+    }),
+  ],
+});
+
+const embeddings = await ai.embed({
+  embedder: ollama.embedder('nomic-embed-text'),
+  content: 'Text to embed for semantic search',
+});
+
+console.log(embeddings[0].embedding); // Array of 768 numbers
+```
+
+### Using in Flows
+
+```typescript
+import { z } from 'genkit';
+
+const codeReviewFlow = ai.defineFlow(
+  {
+    name: 'codeReview',
+    inputSchema: z.object({
+      code: z.string(),
+      language: z.string(),
+    }),
+    outputSchema: z.string(),
+  },
+  async ({ code, language }) => {
+    const response = await ai.generate({
+      model: 'ollama/codellama',
+      prompt: `Review this ${language} code and suggest improvements:\n\n${code}`,
+    });
+    return response.text;
+  }
+);
+
+const review = await codeReviewFlow({
+  code: 'function add(a, b) { return a + b; }',
+  language: 'JavaScript',
+});
+```
+
+## Direct Model Usage
+
+```typescript
+import { ollama } from 'genkitx-ollama';
+
+// Create model reference
+const model = ollama.model('llama3');
+
+// Use directly without Genkit instance
+const response = await model({
+  messages: [
+    {
+      role: 'user',
+      content: [{ text: 'Hello!' }],
+    },
+  ],
+});
+
+console.log(response);
+```
+
+## Advanced Configuration
+
+### Custom Server Address
+
+```typescript
+ollama({
+  models: [{ name: 'gemma' }],
+  serverAddress: 'http://192.168.1.100:11434',  // Remote Ollama server
+})
+```
+
+### Custom Request Headers
+
+```typescript
+ollama({
+  models: [{ name: 'gemma' }],
+  requestHeaders: {
+    'Authorization': 'Bearer my-token',
+    'X-Custom-Header': 'value',
+  },
+})
+
+// Or use a function for dynamic headers
+ollama({
+  models: [{ name: 'gemma' }],
+  requestHeaders: async (context, input) => {
+    return {
+      'Authorization': `Bearer ${await getToken()}`,
+    };
+  },
+})
+```
+
+### Model-specific Settings
+
+```typescript
+ollama({
+  models: [
+    {
+      name: 'llama3',
+      type: 'chat',
+      supports: {
+        tools: true,           // Enable tool calling
+        multiturn: true,       // Multi-turn conversations
+        systemRole: true,      // System messages
+      },
+    },
+  ],
+})
+```
+
+## Model Management
+
+### List Available Models
+
+```bash
+ollama list
+```
+
+### Pull New Models
+
+```bash
+ollama pull llama3
+ollama pull gemma:7b        # Specific version
+ollama pull codellama:13b   # Larger variant
+```
+
+### Remove Models
+
+```bash
+ollama rm gemma
+```
+
+### Show Model Info
+
+```bash
+ollama show llama3
+```
+
+## Best Practices
+
+### Choose Appropriate Model Size
+
+- **7B models** - Fast, good for most tasks, 8GB RAM
+- **13B models** - Better quality, 16GB RAM recommended
+- **70B+ models** - Highest quality, requires 32GB+ RAM
+
+### Optimize Performance
+
+```typescript
+// Use smaller context windows
+const response = await ai.generate({
+  model: 'ollama/gemma',
+  prompt: 'Your prompt',
+  config: {
+    maxOutputTokens: 512,  // Limit response length
+  },
+});
+```
+
+### Handle Errors
+
+```typescript
+try {
+  const response = await ai.generate({
+    model: 'ollama/gemma',
+    prompt: 'Your prompt',
+  });
+  console.log(response.text);
+} catch (error) {
+  if (error.message?.includes('ECONNREFUSED')) {
+    console.error('Ollama server is not running. Start it with: ollama serve');
+  } else {
+    console.error('Error:', error);
+  }
+}
+```
+
+### Pre-load Models
+
+Pre-load models to reduce first-request latency:
+
+```bash
+# Keep model loaded in memory
+ollama run gemma
+# Press Ctrl+D to exit but keep model loaded
+```
+
+## Limitations
+
+- **Tool calling**: Only available on `chat` API, not `generate`
+- **Input schema**: Tools must have object input schemas
+- **Performance**: Depends on local hardware
+- **Model size**: Larger models require more RAM and are slower
+
+## Troubleshooting
+
+### Server Not Running
+
+**Error:** `ECONNREFUSED`
+
+**Solution:** Start the Ollama server:
+```bash
+ollama serve
+```
+
+### Model Not Found
+
+**Error:** Model not available
+
+**Solution:** Pull the model first:
+```bash
+ollama pull gemma
+```
+
+### Out of Memory
+
+**Solution:** Use a smaller model or increase system RAM
+
+### Slow Performance
+
+**Solutions:**
+- Use smaller models (7B instead of 13B)
+- Reduce `maxOutputTokens`
+- Use GPU acceleration if available
+- Close other applications
+
+## Links
+
+- [Ollama Website](https://ollama.ai)
+- [Ollama GitHub](https://github.com/ollama/ollama)
+- [Ollama Model Library](https://ollama.ai/library)
+- [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/ollama)

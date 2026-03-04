@@ -1,0 +1,535 @@
+---
+title: 'Publishing Plugins'
+description: 'How to publish Genkit plugins to npm and share with the community'
+---
+
+# Publishing Plugins
+
+Learn how to package, document, and publish your Genkit plugins to npm so others can use them.
+
+## Prerequisites
+
+- Node.js and npm installed
+- npm account ([sign up here](https://www.npmjs.com/signup))
+- TypeScript knowledge
+- Completed plugin implementation
+
+## Package Structure
+
+### Recommended Directory Structure
+
+```
+my-genkit-plugin/
+├── src/
+│   ├── index.ts         # Main plugin export
+│   ├── models.ts        # Model implementations
+│   └── types.ts         # Type definitions
+├── tests/
+│   └── index.test.ts    # Tests
+├── package.json
+├── tsconfig.json
+├── README.md
+├── LICENSE
+└── .npmignore
+```
+
+## Package Configuration
+
+### package.json
+
+```json
+{
+  "name": "genkitx-myplugin",
+  "version": "1.0.0",
+  "description": "Genkit plugin for MyProvider AI models",
+  "keywords": [
+    "genkit",
+    "genkit-plugin",
+    "genkit-model",
+    "ai",
+    "myprovider"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/genkitx-myplugin.git"
+  },
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "require": "./lib/index.js",
+      "import": "./lib/index.mjs",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc && tsup-node",
+    "test": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "genkit": "^1.0.0"
+  },
+  "devDependencies": {
+    "genkit": "^1.0.0",
+    "typescript": "^5.0.0",
+    "tsup": "^8.0.0",
+    "vitest": "^1.0.0"
+  }
+}
+```
+
+**Important fields:**
+
+- `name` - Use `genkitx-*` prefix for community plugins
+- `keywords` - Include `genkit-plugin` for discoverability
+- `peerDependencies` - Require `genkit` as peer dependency
+- `files` - Only include necessary files (lib, README, LICENSE)
+- `exports` - Support both CommonJS and ESM
+
+### tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "declaration": true,
+    "outDir": "./lib",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "lib", "tests"]
+}
+```
+
+### .npmignore
+
+```
+src/
+tests/
+tsconfig.json
+tsup.config.ts
+*.test.ts
+.git/
+.github/
+node_modules/
+```
+
+## Naming Conventions
+
+### Package Names
+
+**Official plugins** (by Firebase/Google):
+- `@genkit-ai/plugin-name` - e.g., `@genkit-ai/anthropic`
+
+**Community plugins**:
+- `genkitx-plugin-name` - e.g., `genkitx-ollama`, `genkitx-pinecone`
+
+**Avoid:**
+- Names starting with `genkit-` (reserved for official packages)
+- Generic names like `genkit-ai-plugin`
+
+### Keywords
+
+Include relevant keywords for npm search:
+
+```json
+"keywords": [
+  "genkit",
+  "genkit-plugin",
+  "genkit-model",        // For model providers
+  "genkit-embedder",     // For embedders
+  "genkit-retriever",    // For vector stores
+  "ai",
+  "llm",
+  "your-provider-name"
+]
+```
+
+## Documentation
+
+### README.md Template
+
+```markdown
+# genkitx-myplugin
+
+Genkit plugin for [MyProvider](https://myprovider.com) AI models.
+
+## Installation
+
+\`\`\`bash
+npm install genkitx-myplugin
+\`\`\`
+
+## Usage
+
+\`\`\`typescript
+import { genkit } from 'genkit';
+import { myProvider } from 'genkitx-myplugin';
+
+const ai = genkit({
+  plugins: [
+    myProvider({ apiKey: process.env.MY_API_KEY }),
+  ],
+});
+
+const response = await ai.generate({
+  model: myProvider.model('my-model'),
+  prompt: 'Hello!',
+});
+\`\`\`
+
+## Configuration
+
+### Plugin Options
+
+- `apiKey` (string, required) - Your MyProvider API key
+- `baseUrl` (string, optional) - Custom API endpoint
+
+### Model Config
+
+- `temperature` (number, 0-2) - Sampling temperature
+- `maxOutputTokens` (number) - Maximum response length
+
+## Available Models
+
+- `my-model-1` - General purpose model
+- `my-model-2` - Specialized model
+
+## Examples
+
+[Include common use cases]
+
+## License
+
+Apache-2.0
+
+## Links
+
+- [MyProvider Documentation](https://myprovider.com/docs)
+- [GitHub Repository](https://github.com/yourusername/genkitx-myplugin)
+- [npm Package](https://www.npmjs.com/package/genkitx-myplugin)
+```
+
+### API Documentation
+
+Document all exported functions and types:
+
+```typescript
+/**
+ * MyProvider plugin for Genkit.
+ * 
+ * Provides access to MyProvider AI models.
+ * 
+ * @param options - Plugin configuration
+ * @param options.apiKey - API key (or set MY_API_KEY env var)
+ * @param options.baseUrl - Optional custom API endpoint
+ * 
+ * @example
+ * ```typescript
+ * import { myProvider } from 'genkitx-myplugin';
+ * 
+ * const ai = genkit({
+ *   plugins: [
+ *     myProvider({ apiKey: 'your-key' }),
+ *   ],
+ * });
+ * ```
+ */
+export function myProvider(options?: MyProviderOptions): GenkitPluginV2 {
+  // ...
+}
+```
+
+## Testing
+
+### Unit Tests
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { genkit } from 'genkit';
+import { myProvider } from '../src';
+
+describe('myProvider plugin', () => {
+  it('should register models', async () => {
+    const ai = genkit({
+      plugins: [myProvider({ apiKey: 'test' })],
+    });
+
+    // Test basic generation
+    const response = await ai.generate({
+      model: myProvider.model('test-model'),
+      prompt: 'Hello',
+    });
+
+    expect(response.text()).toBeTruthy();
+  });
+
+  it('should require API key', () => {
+    expect(() => {
+      myProvider({ apiKey: undefined });
+    }).toThrow('API key required');
+  });
+
+  it('should handle errors', async () => {
+    const ai = genkit({
+      plugins: [myProvider({ apiKey: 'invalid' })],
+    });
+
+    await expect(
+      ai.generate({
+        model: myProvider.model('test'),
+        prompt: 'test',
+      })
+    ).rejects.toThrow();
+  });
+});
+```
+
+## Publishing to npm
+
+### First-time Setup
+
+1. **Create npm account:**
+```bash
+npm adduser
+```
+
+2. **Verify login:**
+```bash
+npm whoami
+```
+
+### Publishing Steps
+
+1. **Build the package:**
+```bash
+npm run build
+```
+
+2. **Test locally:**
+```bash
+npm pack
+# Creates genkitx-myplugin-1.0.0.tgz
+
+# Test in another project
+cd /path/to/test-project
+npm install /path/to/genkitx-myplugin-1.0.0.tgz
+```
+
+3. **Run tests:**
+```bash
+npm test
+```
+
+4. **Update version:**
+```bash
+# Patch release (1.0.0 -> 1.0.1)
+npm version patch
+
+# Minor release (1.0.0 -> 1.1.0)
+npm version minor
+
+# Major release (1.0.0 -> 2.0.0)
+npm version major
+```
+
+5. **Publish:**
+```bash
+npm publish --access public
+```
+
+### Scoped Packages
+
+For organization packages:
+
+```bash
+npm publish --access public
+```
+
+## Best Practices
+
+### 1. Semantic Versioning
+
+Follow [semver](https://semver.org/):
+
+- **Major** (1.0.0 -> 2.0.0) - Breaking changes
+- **Minor** (1.0.0 -> 1.1.0) - New features, backward compatible
+- **Patch** (1.0.0 -> 1.0.1) - Bug fixes
+
+### 2. Changelog
+
+Maintain a CHANGELOG.md:
+
+```markdown
+# Changelog
+
+## [1.1.0] - 2024-03-15
+
+### Added
+- Support for streaming responses
+- New model: my-model-3
+
+### Fixed
+- Token counting issue
+
+## [1.0.0] - 2024-03-01
+
+### Added
+- Initial release
+- Support for my-model-1 and my-model-2
+```
+
+### 3. License
+
+Use Apache-2.0 to match Genkit:
+
+```
+Copyright 2024 Your Name
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### 4. Types
+
+Always include TypeScript declarations:
+
+```json
+{
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts"
+    }
+  }
+}
+```
+
+### 5. Peer Dependencies
+
+Use `peerDependencies` for Genkit:
+
+```json
+{
+  "peerDependencies": {
+    "genkit": "^1.0.0"
+  },
+  "devDependencies": {
+    "genkit": "^1.0.0"
+  }
+}
+```
+
+### 6. Security
+
+- Don't include API keys in code or tests
+- Add `.env` to `.gitignore`
+- Use environment variables for secrets
+- Document security best practices
+
+### 7. Examples
+
+Provide working examples:
+
+```
+examples/
+├── basic-usage.ts
+├── streaming.ts
+└── rag-example.ts
+```
+
+## Maintenance
+
+### Responding to Issues
+
+- Triage issues promptly
+- Label issues appropriately
+- Provide clear reproduction steps
+- Fix critical bugs quickly
+
+### Keeping Up-to-date
+
+- Monitor Genkit releases
+- Update peer dependency versions
+- Test against new Genkit versions
+- Update documentation
+
+### Deprecation
+
+If deprecating features:
+
+```typescript
+/**
+ * @deprecated Use newFunction() instead. Will be removed in v2.0.0.
+ */
+export function oldFunction() {
+  console.warn('oldFunction is deprecated. Use newFunction instead.');
+  return newFunction();
+}
+```
+
+## Promotion
+
+### Share Your Plugin
+
+1. **Genkit Discord** - Announce in #plugins channel
+2. **GitHub** - Add `genkit-plugin` topic to repository
+3. **Twitter/X** - Share with #Genkit hashtag
+4. **Blog post** - Write about your plugin
+5. **Documentation** - Submit PR to genkit-ai/docsite
+
+### Badge for README
+
+```markdown
+[![npm version](https://badge.fury.io/js/genkitx-myplugin.svg)](https://www.npmjs.com/package/genkitx-myplugin)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+```
+
+## Resources
+
+- [npm Documentation](https://docs.npmjs.com/)
+- [Semantic Versioning](https://semver.org/)
+- [Genkit Plugin Examples](https://github.com/firebase/genkit/tree/main/js/plugins)
+- [Creating Plugins Guide](/plugins/creating-plugins)
+- [Plugin API Reference](/plugins/plugin-api)
+
+## Checklist
+
+Before publishing:
+
+- [ ] Tests pass
+- [ ] Documentation complete
+- [ ] README with examples
+- [ ] LICENSE file included
+- [ ] Keywords in package.json
+- [ ] TypeScript declarations
+- [ ] Semantic version number
+- [ ] Changelog updated
+- [ ] No API keys in code
+- [ ] Peer dependencies correct
+- [ ] `npm pack` and test locally

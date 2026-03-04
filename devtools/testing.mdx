@@ -1,0 +1,446 @@
+---
+title: Testing
+description: Strategies for testing AI applications built with Genkit
+---
+
+Testing AI applications requires different strategies than traditional software testing. Genkit provides tools and patterns for testing flows, evaluating model outputs, and ensuring your AI features work reliably.
+
+## Testing Approaches
+
+### Flow Testing
+
+Flows are the core testable units in Genkit applications. You can test flows using:
+
+1. **Interactive Testing** - Developer UI
+2. **Command-Line Testing** - CLI commands
+3. **Automated Testing** - Unit and integration tests
+4. **Batch Testing** - Testing with datasets
+
+## Interactive Testing with Developer UI
+
+The Developer UI provides the fastest way to test flows during development:
+
+```bash
+genkit start -- npm run dev
+```
+
+**Benefits:**
+- Immediate visual feedback
+- Trace inspection for debugging
+- Easy input modification
+- Streaming output support
+
+**Example Workflow:**
+1. Open the Developer UI (typically `http://localhost:4000`)
+2. Navigate to the Flows section
+3. Select your flow (e.g., `simpleGreeting`)
+4. Enter test input:
+   ```json
+   {"customerName": "Sam"}
+   ```
+5. Click "Run" and inspect the output
+6. Review the trace for detailed execution steps
+
+## Command-Line Testing
+
+### Running Individual Flows
+
+Test flows from the command line with specific inputs:
+
+```bash
+genkit flow:run simpleGreeting '{"customerName":"Sam"}'
+```
+
+**With Output Streaming:**
+```bash
+genkit flow:run menuQuestion '{"question":"What drinks do you have?"}' --stream
+```
+
+**Saving Results:**
+```bash
+genkit flow:run simpleGreeting '{"customerName":"Sam"}' --output result.json
+```
+
+### Batch Testing
+
+Test flows with multiple inputs using batch runs:
+
+**Create a test dataset** (`test-inputs.json`):
+```json
+[
+  {"customerName": "Alice"},
+  {"customerName": "Bob"},
+  {"customerName": "Charlie"}
+]
+```
+
+**Run the batch test:**
+```bash
+genkit flow:batchRun simpleGreeting test-inputs.json --output results.json
+```
+
+**Label batch runs for tracking:**
+```bash
+genkit flow:batchRun simpleGreeting test-inputs.json --label "regression-test-v1"
+```
+
+This creates labeled traces that can be filtered in the Developer UI and extracted later for evaluation.
+
+## Creating Testable Flows
+
+Design flows with testing in mind:
+
+```typescript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+// Define clear input and output schemas
+const CustomerNameSchema = z.object({
+  customerName: z.string(),
+});
+
+// Create a testable flow
+export const simpleGreetingFlow = ai.defineFlow(
+  {
+    name: 'simpleGreeting',
+    inputSchema: CustomerNameSchema,
+    outputSchema: z.string(),
+  },
+  async (input) => {
+    const prompt = ai.definePrompt(
+      {
+        name: 'greetingPrompt',
+        model: googleAI.model('gemini-flash-latest'),
+        input: { schema: CustomerNameSchema },
+      },
+      `You're a barista at a coffee shop.
+       A customer named {{customerName}} enters.
+       Greet them in one sentence.`
+    );
+    
+    const result = await prompt(input);
+    return result.text;
+  }
+);
+```
+
+**Testing this flow:**
+```bash
+genkit flow:run simpleGreeting '{"customerName":"Sam"}'
+```
+
+### Self-Testing Flows
+
+Create flows that test other flows:
+
+```typescript
+export const testAllCoffeeFlows = ai.defineFlow(
+  {
+    name: 'testAllCoffeeFlows',
+    outputSchema: z.object({
+      pass: z.boolean(),
+      error: z.string().optional(),
+    }),
+  },
+  async () => {
+    try {
+      // Test flow 1
+      const test1 = await simpleGreetingFlow({ 
+        customerName: 'Sam' 
+      });
+      
+      // Test flow 2 with different inputs
+      const test2 = await greetingWithHistoryFlow({
+        customerName: 'Sam',
+        currentTime: '09:45am',
+        previousOrder: 'Caramel Macchiato',
+      });
+      
+      // Verify results
+      if (!test1 || !test2) {
+        return { pass: false, error: 'Empty response' };
+      }
+      
+      return { pass: true };
+    } catch (error) {
+      return { 
+        pass: false, 
+        error: error.message 
+      };
+    }
+  }
+);
+```
+
+**Run the test flow:**
+```bash
+genkit flow:run testAllCoffeeFlows
+```
+
+View the trace in the Developer UI to see the results of all nested flow executions.
+
+## Evaluation-Based Testing
+
+Evaluation goes beyond simple pass/fail testing by measuring quality metrics.
+
+### Running Evaluations
+
+**Evaluate a flow with a dataset:**
+```bash
+genkit eval:flow simpleGreeting --input test-dataset.json --evaluators answer-relevance,faithfulness
+```
+
+**Evaluate a standalone dataset:**
+```bash
+genkit eval:run evaluation-dataset.json --evaluators answer-quality
+```
+
+### Creating Test Datasets
+
+Test datasets should include input, expected output, and context:
+
+```json
+[
+  {
+    "testCaseId": "greeting-1",
+    "input": {"customerName": "Alice"},
+    "reference": "A friendly greeting mentioning Alice by name",
+    "context": ["Coffee shop setting", "Morning time"]
+  },
+  {
+    "testCaseId": "greeting-2",
+    "input": {"customerName": "Bob"},
+    "reference": "A friendly greeting mentioning Bob by name",
+    "context": ["Coffee shop setting", "Afternoon time"]
+  }
+]
+```
+
+### Extracting Test Data from Traces
+
+Generate test datasets from production traces:
+
+```bash
+genkit eval:extractData simpleGreeting --output extracted-dataset.json --maxRows 50
+```
+
+This extracts:
+- Actual inputs used in production
+- Outputs generated
+- Context information
+- Trace IDs for reference
+
+**Extract data from labeled runs:**
+```bash
+genkit eval:extractData simpleGreeting --label "production-v1" --maxRows 100
+```
+
+## Integration Testing
+
+Test flows in integration with external services:
+
+```typescript
+// Test with real model API
+export const integrationTestFlow = ai.defineFlow(
+  {
+    name: 'integrationTest',
+    outputSchema: z.object({ success: z.boolean() }),
+  },
+  async () => {
+    const result = await ai.generate({
+      model: googleAI.model('gemini-flash-latest'),
+      prompt: 'Say hello',
+    });
+    
+    return { 
+      success: result.text.length > 0 
+    };
+  }
+);
+```
+
+## Mock Testing
+
+While Genkit doesn't provide built-in mocking, you can implement mocks for testing:
+
+```typescript
+// Create a mock model for testing
+const mockModel = ai.defineModel(
+  {
+    name: 'mock-model',
+  },
+  async (input) => {
+    // Return deterministic responses for testing
+    return {
+      message: { role: 'model', content: [{ text: 'Mock response' }] },
+      finishReason: 'stop',
+    };
+  }
+);
+
+// Use in test flows
+const testFlow = ai.defineFlow(
+  { name: 'testWithMock' },
+  async () => {
+    const result = await ai.generate({
+      model: mockModel,
+      prompt: 'Test prompt',
+    });
+    return result.text;
+  }
+);
+```
+
+## Unit Testing with Jest/Vitest
+
+Write traditional unit tests for your flows:
+
+```typescript
+import { describe, test, expect } from '@jest/globals';
+import { simpleGreetingFlow } from './index';
+
+describe('simpleGreetingFlow', () => {
+  test('should greet customer by name', async () => {
+    const result = await simpleGreetingFlow({ 
+      customerName: 'Alice' 
+    });
+    
+    expect(result).toBeTruthy();
+    expect(result.toLowerCase()).toContain('alice');
+  });
+  
+  test('should handle empty customer name', async () => {
+    await expect(
+      simpleGreetingFlow({ customerName: '' })
+    ).rejects.toThrow();
+  });
+});
+```
+
+**Example from Genkit source** (`cloud-sql-pg/test/index.test.ts`):
+```typescript
+describe('configurePostgresRetriever Integration Tests', () => {
+  test('should retrieve relevant documents based on a query', async () => {
+    const retriever = configurePostgresRetriever({
+      embedder: mockEmbedder,
+      engine: testEngine,
+      tableName: TEST_TABLE,
+    });
+    
+    const results = await retriever.retrieve({
+      query: 'test query',
+      k: 5,
+    });
+    
+    expect(results).toBeDefined();
+    expect(results.length).toBeGreaterThan(0);
+  });
+  
+  test('should handle empty query text gracefully', async () => {
+    const retriever = configurePostgresRetriever({
+      embedder: mockEmbedder,
+      engine: testEngine,
+    });
+    
+    const results = await retriever.retrieve({
+      query: '',
+      k: 5,
+    });
+    
+    expect(results).toEqual([]);
+  });
+});
+```
+
+## Best Practices
+
+### 1. Use Clear Schemas
+
+Define explicit input and output schemas for all flows:
+```typescript
+const inputSchema = z.object({
+  question: z.string(),
+  context: z.array(z.string()).optional(),
+});
+
+const outputSchema = z.object({
+  answer: z.string(),
+  confidence: z.number(),
+});
+```
+
+### 2. Test Edge Cases
+
+- Empty inputs
+- Very long inputs
+- Special characters
+- Invalid data types
+- Missing required fields
+
+### 3. Label Test Runs
+
+Use labels to organize test traces:
+```bash
+genkit flow:batchRun myFlow inputs.json --label "regression-v2.1"
+```
+
+### 4. Maintain Test Datasets
+
+Keep versioned test datasets in your repository:
+```
+tests/
+  datasets/
+    greeting-v1.json
+    greeting-v2.json
+    menu-questions.json
+```
+
+### 5. Automate Evaluation
+
+Incorporate evaluation into CI/CD:
+```bash
+#!/bin/bash
+# test.sh
+genkit start -- npm run dev &
+PID=$!
+sleep 5
+genkit eval:flow myFlow --input tests/datasets/test-v1.json --force
+kill $PID
+```
+
+### 6. Review Traces
+
+Always inspect traces for failed tests to understand why they failed:
+1. Run the test via CLI or UI
+2. Open the Developer UI
+3. Navigate to Traces
+4. Find the failed trace
+5. Inspect each step
+
+### 7. Test with Real Data
+
+Extract real usage patterns:
+```bash
+genkit eval:extractData myFlow --maxRows 100 --output real-data.json
+```
+
+Use this data to create realistic test cases.
+
+## Continuous Testing
+
+Integrate testing into your development workflow:
+
+1. **During Development**: Use Developer UI for immediate feedback
+2. **Before Commits**: Run batch tests locally
+3. **In CI/CD**: Run automated evaluations
+4. **After Deployment**: Extract production data for new test cases
+
+## Next Steps
+
+- Learn about [Debugging](/devtools/debugging) techniques for troubleshooting
+- Explore the [Developer UI](/devtools/developer-ui) for interactive testing
+- Review [CLI commands](/devtools/cli) for test automation

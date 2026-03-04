@@ -1,0 +1,241 @@
+---
+title: Developer UI
+description: Interactive interface for testing and debugging Genkit applications
+---
+
+The Genkit Developer UI is a local web interface that accelerates AI development by providing visual tools for testing, debugging, and iterating on your AI applications.
+
+## Overview
+
+The Developer UI is a purpose-built interface that helps you:
+
+- **Run**: Execute and experiment with flows, prompts, queries, and more in dedicated playgrounds
+- **Inspect**: Analyze detailed traces of past executions, including step-by-step breakdowns of complex flows
+- **Evaluate**: Review evaluation results with performance metrics and links to relevant traces
+
+![Genkit Developer UI showing traces](/resources/readme-ui-traces-screenshot.png)
+
+## Starting the Developer UI
+
+There are two ways to launch the Developer UI:
+
+### With Your Application (Recommended)
+
+Launch the UI alongside your application using `genkit start`:
+
+```bash
+genkit start -- npm run dev
+```
+
+This command:
+1. Wraps your development server with telemetry collection
+2. Launches the Developer UI (typically on port 4000-4099)
+3. Automatically connects the UI to your running application
+4. Opens the browser (if you use the `-o` flag)
+
+**Options:**
+- `-n, --noui` - Run your app without starting the UI
+- `-p, --port <port>` - Specify the UI port
+- `-o, --open` - Automatically open the browser
+- `--disable-realtime-telemetry` - Disable real-time telemetry streaming
+
+### Standalone Mode
+
+Start the UI independently and connect to runtimes in the same directory:
+
+```bash
+genkit ui:start
+```
+
+**Options:**
+- `-p, --port <number>` - Port to serve on (defaults to 4000)
+- `-o, --open` - Open the browser on startup
+
+To stop the standalone UI:
+```bash
+genkit ui:stop
+```
+
+## Key Features
+
+### Flow Playground
+
+Test and experiment with your flows interactively:
+
+- **Input Editor**: Provide JSON input data or use the visual form builder
+- **Real-time Execution**: Run flows and see results immediately
+- **Streaming Support**: Watch streamed responses as they generate
+- **Context Configuration**: Pass additional context to flow executions
+- **Output Inspection**: View formatted responses and structured data
+
+**Example Usage:**
+1. Navigate to the Flows section in the UI
+2. Select a flow (e.g., `simpleGreeting`)
+3. Enter input: `{"customerName": "Sam"}`
+4. Click "Run" to execute
+5. View the generated greeting in the output panel
+
+### Trace Inspector
+
+Analyze detailed execution traces to understand how your flows work:
+
+- **Step-by-step Breakdown**: See each operation in your flow execution
+- **Timing Information**: Identify performance bottlenecks
+- **Model Interactions**: Inspect prompts sent to models and responses received
+- **Error Details**: View stack traces and error messages when flows fail
+- **Nested Flow Visualization**: Understand complex multi-step workflows
+
+**Trace Details Include:**
+- Span names and types
+- Input and output data for each step
+- Execution duration
+- Model configuration and parameters
+- Metadata and attributes
+- Error information (if applicable)
+
+Traces are automatically collected when you:
+- Run flows through the UI
+- Execute flows via the CLI with `genkit start`
+- Run your application with `GENKIT_ENV=dev`
+
+### Prompt Testing
+
+Experiment with prompts and compare model outputs:
+
+- **Prompt Editor**: Edit and test prompt templates
+- **Variable Substitution**: Test prompts with different input variables
+- **Model Comparison**: Compare outputs from different models
+- **Version History**: Track prompt iterations
+- **Immediate Feedback**: See results as you modify prompts
+
+### Evaluator Results
+
+Review evaluation runs and analyze model performance:
+
+- **Evaluation Dashboard**: View all evaluation runs
+- **Performance Metrics**: See scores from configured evaluators
+- **Trace Links**: Jump to detailed traces for each evaluation
+- **Dataset Comparison**: Compare results across different datasets
+- **Export Results**: Download evaluation data for further analysis
+
+**Accessing Evaluation Results:**
+
+After running an evaluation with the CLI:
+```bash
+genkit eval:flow menuQuestion --input test-data.json
+```
+
+The CLI outputs a URL like:
+```
+View the evaluation results at: http://localhost:4000/evaluate/<evalRunId>
+```
+
+### Dataset Management
+
+Manage test datasets for evaluation:
+
+- Browse existing datasets
+- View dataset contents
+- Create new test cases
+- Export datasets for use with CLI commands
+
+## Development Workflow
+
+The Developer UI integrates seamlessly into your development workflow:
+
+### 1. Initial Development
+
+```bash
+# Start your app with the UI
+genkit start -- npm run dev
+```
+
+- Write flow code in your editor
+- Test flows immediately in the UI
+- Iterate based on results
+
+### 2. Testing and Iteration
+
+- Use the Flow Playground to test different inputs
+- Inspect traces to understand behavior
+- Modify prompts visually and see immediate results
+- Compare different model configurations
+
+### 3. Debugging Issues
+
+- Review error traces in the Trace Inspector
+- Examine input/output at each step
+- Check timing to identify slow operations
+- Verify model parameters and prompts
+
+### 4. Evaluation
+
+- Run evaluations via CLI or UI
+- Review results in the Evaluation Dashboard
+- Click through to traces for failed cases
+- Export data for reporting
+
+## Connecting to Your Application
+
+For the UI to interact with your flows, ensure:
+
+1. **Environment Variable**: Set `GENKIT_ENV=dev` when running your application
+2. **Same Directory**: The UI and your application must be in the same project directory
+3. **Active Runtime**: Your application must be running to execute flows
+
+If you start the UI but haven't started your application:
+```
+Set env variable `GENKIT_ENV` to `dev` and start your app code to interact with it in the UI.
+```
+
+## Real-time Telemetry
+
+The Developer UI supports real-time telemetry streaming:
+
+- Traces appear instantly as flows execute
+- Monitor live application behavior
+- See streaming outputs in real-time
+- Debug production-like scenarios locally
+
+To disable real-time telemetry:
+```bash
+genkit start --disable-realtime-telemetry -- npm run dev
+```
+
+## Tips
+
+- **Keyboard Shortcuts**: Use browser developer tools (F12) to inspect network requests and responses
+- **Multiple Windows**: Open the UI in multiple browser tabs to compare different views
+- **Bookmarks**: Bookmark specific trace or evaluation URLs for quick access
+- **Export Data**: Use the export features to save traces and evaluation results
+- **Port Conflicts**: If port 4000 is busy, the CLI automatically finds an available port in the 4000-4099 range
+
+## Troubleshooting
+
+### UI Won't Start
+
+Check if the UI is already running:
+```bash
+genkit ui:stop
+genkit ui:start
+```
+
+### Can't See Flows
+
+Ensure your application is running with `GENKIT_ENV=dev`:
+```bash
+GENKIT_ENV=dev npm run dev
+```
+
+### Traces Not Appearing
+
+Verify that:
+1. Your application is running in the same directory
+2. `GENKIT_ENV=dev` is set
+3. You're executing flows (not just starting the app)
+
+## Next Steps
+
+- Learn about [CLI commands](/devtools/cli) for advanced workflows
+- Explore [Testing strategies](/devtools/testing) for AI applications
+- Read the [Debugging guide](/devtools/debugging) for troubleshooting techniques

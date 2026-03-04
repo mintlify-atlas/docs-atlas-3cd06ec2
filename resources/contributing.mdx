@@ -1,0 +1,443 @@
+---
+title: Contributing to Genkit
+description: Learn how to contribute to the Genkit open-source project
+---
+
+We'd love to accept your patches and contributions to Genkit. This guide will help you get started with contributing to the project.
+
+## Before You Begin
+
+### Sign the Contributor License Agreement
+
+Contributions to this project must be accompanied by a [Contributor License Agreement](https://cla.developers.google.com/about) (CLA). You (or your employer) retain the copyright to your contribution; this simply gives us permission to use and redistribute your contributions as part of the project.
+
+If you or your current employer have already signed the Google CLA (even if it was for a different project), you probably don't need to do it again.
+
+<Card title="Sign the CLA" icon="signature" href="https://cla.developers.google.com/">
+  View your current agreements or sign a new one
+</Card>
+
+### Review Community Guidelines
+
+This project follows [Google's Open Source Community Guidelines](https://opensource.google/conduct/). We expect all contributors to:
+
+- Be respectful and constructive
+- Welcome newcomers
+- Focus on what's best for the community  
+- Show empathy and kindness
+
+## Contribution Process
+
+### Code Reviews
+
+All submissions, including submissions by project members, require review. We use GitHub pull requests for this purpose.
+
+<Card title="GitHub Pull Requests" icon="github" href="https://help.github.com/articles/about-pull-requests/">
+  Learn more about using pull requests
+</Card>
+
+### Development Workflow
+
+1. **Fork the repository**: Create your own fork of the code
+2. **Create a branch**: Use a descriptive branch name (e.g., `your-name/feature-something`)
+3. **Make changes**: Implement your feature or fix
+4. **Test thoroughly**: Ensure all tests pass
+5. **Format code**: Run formatters before committing
+6. **Submit PR**: Include clear description and link related issues
+
+## Development Setup
+
+<Note>
+  If you want to set up all runtime environments at once (js/go/py), you can run the `bin/setup` script. However, this script may affect your existing project environment setup.
+</Note>
+
+### Prerequisites
+
+Before contributing to any language runtime, complete these steps:
+
+1. **Install Node.js 20 or later** using [nvm](https://nodejs.org/en/download)
+   
+   <Warning>
+     Node.js v20 or greater is required. Earlier versions may not work properly.
+   </Warning>
+
+2. **Install the Genkit CLI globally**:
+   ```bash
+   npm install -g genkit-cli
+   ```
+
+After completing these prerequisites, follow the language-specific setup instructions below.
+
+## JavaScript/TypeScript Development
+
+### Install Dependencies
+
+Enable pnpm and install dependencies:
+
+```bash
+corepack enable pnpm
+pnpm i
+pnpm run setup
+```
+
+This installs all dependencies and builds all packages.
+
+### Build the Project
+
+```bash
+pnpm build
+```
+
+Recommended the first time you check out the repo or pull new revisions.
+
+### Build Specific Packages
+
+Reduce build scope for faster iteration:
+
+```bash
+# Build specific workspace
+pnpm build:genkit
+pnpm build:genkit-tools
+
+# Or build in a specific package directory
+cd js/plugins/google-genai
+pnpm build
+
+# Watch mode for active development
+pnpm build:watch
+```
+
+### Package for Distribution
+
+Create distribution tarballs:
+
+```bash
+pnpm pack:all
+```
+
+Produces tarballs in the `dist` folder and `genkit-dist.zip` with all packages.
+
+### Link the CLI
+
+Link the Genkit CLI for testing:
+
+```bash
+pnpm link-genkit-cli
+```
+
+### Run Test Apps
+
+Test apps are in `js/testapps`. Example:
+
+```bash
+cd js/testapps/flow-sample1
+genkit start -- tsx --watch src/index.ts
+```
+
+Access the Developer UI at http://localhost:4000
+
+### Run Evaluations
+
+Example using the `pdfQA` flow:
+
+```bash
+cd js/testapps/evals
+genkit start -- pnpm genkit:dev
+```
+
+1. Click **indexPdf** flow in the left nav
+2. Input PDF path: `"./docs/cat-handbook.pdf"`  
+3. Run evaluation:
+   ```bash
+   genkit eval:flow pdfQA --input ./data/cat_adoption_questions.json
+   ```
+4. View results in **Evaluations** tab
+
+### Document Your Changes
+
+If contributing to the core Genkit JS SDK (under `/js`), ensure all exported members have valid [JSDoc](https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html).
+
+Build and view API reference locally:
+
+```bash
+cd js && pnpm build && pnpm typedoc-html && open api-refs-js/index.html
+```
+
+### Before Submitting
+
+Always run before creating a PR:
+
+```bash
+pnpm format
+pnpm build
+```
+
+## Go Development
+
+### Install Go
+
+Install Go 1.24 or later following the [official installation guide](https://golang.org/doc/install).
+
+### Configure AI Model Access
+
+Most samples use Google's Gemini model. Generate an API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+Set the environment variable:
+
+```bash
+export GOOGLE_GENAI_API_KEY=<your-api-key>
+```
+
+### Run a Sample Application
+
+```bash
+cd go/samples          # Navigate to samples directory
+cd <sample-name>       # Choose a sample
+go mod tidy            # Install dependencies
+genkit start -- go run .  # Start the server
+```
+
+Access the Developer UI at http://localhost:4000
+
+### Run Tests
+
+```bash
+cd <test-directory>    # Navigate to test directory  
+go test .              # Run tests
+```
+
+## Python Development
+
+### Install Python Dependencies
+
+Python samples use `uv` for dependency management:
+
+```bash
+cd py/samples/<sample-name>
+./run.sh  # Installs deps and starts with hot reload
+```
+
+### Run Samples
+
+Each Python sample includes a `run.sh` script:
+
+```bash
+cd py/samples/<sample-name>
+./run.sh
+```
+
+This starts the Genkit DevUI at http://localhost:4000 with automatic hot reloading.
+
+### Python Code Standards
+
+Follow the standards in `py/GEMINI.md`:
+
+- Use type hints for all function signatures
+- Follow PEP 8 conventions
+- Use Pydantic models for structured data
+- Import statements at top of file
+- Document public APIs with docstrings
+
+### Testing
+
+Run tests for Python packages:
+
+```bash
+cd py/packages/<package-name>
+uv run pytest
+```
+
+## Code Standards
+
+### General Guidelines
+
+- **Write clear, readable code**: Prioritize clarity over cleverness
+- **Add tests**: Include unit tests for new features
+- **Update docs**: Document new features and API changes  
+- **Follow conventions**: Match the existing code style
+- **Keep commits atomic**: One logical change per commit
+
+### Language-Specific Standards
+
+<AccordionGroup>
+  <Accordion title="JavaScript/TypeScript">
+    - Use TypeScript for type safety
+    - Follow existing ESLint configuration  
+    - Use async/await for asynchronous code
+    - Add JSDoc comments for exported APIs
+    - Prefer functional patterns where appropriate
+  </Accordion>
+  
+  <Accordion title="Go">
+    - Follow standard Go formatting (gofmt)
+    - Use meaningful variable and function names
+    - Add comments for exported functions
+    - Handle errors explicitly
+    - Use context for cancelation and timeouts
+  </Accordion>
+  
+  <Accordion title="Python">
+    - Follow PEP 8 style guide
+    - Use type hints (PEP 484)
+    - Use Pydantic for data validation
+    - Add docstrings for public APIs
+    - Use async/await for asynchronous code
+  </Accordion>
+</AccordionGroup>
+
+### Testing Requirements
+
+- **Unit tests**: Add tests for new functionality
+- **Integration tests**: Test interactions between components
+- **Edge cases**: Test boundary conditions and error handling
+- **Regression tests**: Add tests for bug fixes
+
+### Documentation Requirements
+
+- **Code comments**: Explain complex logic
+- **API documentation**: Document public APIs (JSDoc, GoDoc, docstrings)
+- **README updates**: Update READMEs for new samples or features
+- **Changelog entries**: Add entries for user-facing changes
+
+## Pull Request Process
+
+### Creating a Pull Request
+
+1. **Branch naming**: Use format `your-name/feature-description`
+2. **Clear title**: Describe what the PR does  
+3. **Detailed description**: Explain the what, why, and how
+4. **Link issues**: Reference related issues (e.g., "Fixes #123")
+5. **Screenshots**: Include for UI changes
+6. **Breaking changes**: Clearly mark and explain
+
+### PR Description Template
+
+```markdown
+## Description
+Brief description of changes
+
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature  
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Testing
+How these changes were tested
+
+## Checklist
+- [ ] Code follows project style guidelines
+- [ ] Self-review completed
+- [ ] Comments added for complex code
+- [ ] Documentation updated
+- [ ] Tests added/updated
+- [ ] All tests pass
+- [ ] No new warnings
+```
+
+### Review Process
+
+1. **Automated checks**: CI must pass
+2. **Code review**: At least one maintainer approval required
+3. **Address feedback**: Make requested changes  
+4. **Merge**: Maintainers will merge when ready
+
+## Contributing Documentation
+
+Documentation improvements are always welcome!
+
+### Documentation Structure
+
+- **Main docs**: [genkit-ai/docsite](https://github.com/genkit-ai/docsite)
+- **API reference**: Generated from code (JSDoc, GoDoc, docstrings)
+- **Samples**: Include README.md in each sample directory
+
+### Documentation Guidelines
+
+- Use clear, concise language
+- Include code examples
+- Test all code snippets  
+- Use proper Markdown formatting
+- Add images/diagrams for complex concepts
+
+<Card title="Documentation Contributions" icon="file-lines" href="https://github.com/genkit-ai/docsite">
+  Contribute to Genkit documentation
+</Card>
+
+## Contributing Samples
+
+### Sample Structure
+
+Follow these guidelines for new samples:
+
+**JavaScript:**
+```
+samples/<name>/
+├── package.json
+├── README.md  
+├── tsconfig.json
+└── src/
+    └── index.ts
+```
+
+**Go:**
+```
+go/samples/<name>/
+├── go.mod
+├── README.md
+└── main.go  
+```
+
+**Python:**
+```
+py/samples/<name>/
+├── pyproject.toml
+├── README.md
+├── run.sh
+└── src/
+    └── main.py
+```
+
+### Sample Guidelines
+
+- **Focus on one concept**: Demonstrate a specific feature or pattern
+- **Complete and runnable**: Include all necessary setup
+- **Well-documented**: Explain what it does and how to run it  
+- **Use best practices**: Show recommended patterns
+- **Include comments**: Explain key parts of the code
+
+<Card title="Sample Contributions" icon="code" href="https://github.com/genkit-ai/samples">
+  Contribute community samples
+</Card>
+
+## Getting Help
+
+Need help with your contribution?
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/qXt5zzQKpc">
+    Ask questions in real-time
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/firebase/genkit/discussions">
+    Start a discussion
+  </Card>
+  
+  <Card title="Documentation" icon="book" href="/quickstart">
+    Read the docs
+  </Card>
+  
+  <Card title="Examples" icon="code" href="/resources/examples">
+    Browse sample code
+  </Card>
+</CardGroup>
+
+## Thank You!
+
+Thank you for contributing to Genkit! Your contributions help make AI development more accessible to developers worldwide.
+
+---
+
+<Info>
+  **Questions about contributing?** Ask on [Discord](https://discord.gg/qXt5zzQKpc) or [GitHub Discussions](https://github.com/firebase/genkit/discussions).
+</Info>

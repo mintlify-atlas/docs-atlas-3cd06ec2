@@ -1,0 +1,236 @@
+---
+title: Genkit CLI
+description: Command-line interface for Genkit development
+---
+
+The Genkit CLI provides powerful commands for developing, testing, and managing your AI applications. It includes tools for running flows, evaluating models, and launching the Developer UI.
+
+## Installation
+
+Install the Genkit CLI globally using npm:
+
+```bash
+npm install -g genkit-cli
+```
+
+The CLI is distributed as the `genkit-cli` package and provides the `genkit` command for interacting with the Genkit AI framework.
+
+## Core Commands
+
+### start
+
+Run your application in development mode with telemetry and Developer UI:
+
+```bash
+genkit start -- <command to run your code>
+```
+
+**Options:**
+- `-n, --noui` - Do not start the Developer UI
+- `-p, --port <port>` - Port for the Developer UI (defaults to 4000-4099 range)
+- `-o, --open` - Open the browser on UI startup
+- `--disable-realtime-telemetry` - Disable real-time telemetry streaming
+- `--cors-origin <origin>` - Specify the allowed origin for CORS requests
+
+**Example:**
+```bash
+genkit start -- npm run dev
+```
+
+This command wraps your development server with telemetry collection and launches the interactive Developer UI for testing and debugging.
+
+### ui:start
+
+Start the Developer UI standalone (connects to runtimes in the same directory):
+
+```bash
+genkit ui:start
+```
+
+**Options:**
+- `-p, --port <number>` - Port to serve on (defaults to 4000)
+- `-o, --open` - Open the browser on UI startup
+
+### ui:stop
+
+Stop the running Developer UI server:
+
+```bash
+genkit ui:stop
+```
+
+## Flow Commands
+
+### flow:run
+
+Run a flow with provided input data:
+
+```bash
+genkit flow:run <flowName> [data]
+```
+
+**Arguments:**
+- `<flowName>` - Name of the flow to run
+- `[data]` - JSON data to use as input (optional)
+
+**Options:**
+- `-w, --wait` - Wait for the flow to complete
+- `-s, --stream` - Stream output
+- `-c, --context <JSON>` - JSON object passed to context
+- `--output <filename>` - Name of the output file to store results
+
+**Examples:**
+```bash
+# Run a flow with inline JSON data
+genkit flow:run simpleGreeting '{"customerName":"Sam"}'
+
+# Run a flow and save output to file
+genkit flow:run simpleGreeting '{"customerName":"Sam"}' --output result.json
+
+# Run a flow with streaming enabled
+genkit flow:run menuQuestion '{"question":"What drinks do you have?"}' --stream
+```
+
+### flow:batchRun
+
+Batch run a flow using a set of data from a file:
+
+```bash
+genkit flow:batchRun <flowName> <inputFileName>
+```
+
+**Arguments:**
+- `<flowName>` - Name of the flow to run
+- `<inputFileName>` - JSON file containing batch data
+
+**Options:**
+- `-w, --wait` - Wait for the flow to complete
+- `-c, --context <JSON>` - JSON object passed to context
+- `--output <filename>` - Name of the output file to store results
+- `--label [label]` - Label flow runs in this batch
+
+**Example:**
+```bash
+genkit flow:batchRun simpleGreeting inputs.json --output results.json
+```
+
+The input file should contain an array of inputs:
+```json
+[
+  {"customerName": "Alice"},
+  {"customerName": "Bob"},
+  {"customerName": "Charlie"}
+]
+```
+
+## Evaluation Commands
+
+### eval:run
+
+Evaluate a dataset against configured evaluators:
+
+```bash
+genkit eval:run <dataset>
+```
+
+**Arguments:**
+- `<dataset>` - Dataset to evaluate (JSON file)
+
+**Options:**
+- `--output <filename>` - Output file for evaluation results
+- `--output-format <format>` - Output file format (csv, json) - defaults to json
+- `--evaluators <evaluators>` - Comma-separated list of evaluators to use
+- `--batchSize <batchSize>` - Batch size for parallel evaluations (default: 1)
+- `--force` - Automatically accept all interactive prompts
+
+**Example:**
+```bash
+genkit eval:run dataset.json --evaluators faithfulness,relevance --output eval-results.json
+```
+
+### eval:flow
+
+Evaluate a flow against configured evaluators:
+
+```bash
+genkit eval:flow <flowName> [data]
+```
+
+**Arguments:**
+- `<flowName>` - Name of the flow to evaluate
+- `[data]` - JSON data to use as input (optional)
+
+**Options:**
+- `--input <input>` - Input dataset ID or JSON file for evaluation
+- `-c, --context <JSON>` - JSON object passed to context
+- `-o, --output <filename>` - Output file for evaluation results
+- `--output-format <format>` - Output file format (csv, json)
+- `-e, --evaluators <evaluators>` - Comma-separated list of evaluators
+- `--batchSize <batchSize>` - Batch size for parallel evaluations
+- `-f, --force` - Automatically accept all interactive prompts
+
+**Example:**
+```bash
+genkit eval:flow menuQuestion --input test-dataset.json --evaluators answer-relevance
+```
+
+### eval:extractData
+
+Extract evaluation data for a flow from the trace store:
+
+```bash
+genkit eval:extractData <flowName>
+```
+
+**Options:**
+- `--output <filename>` - Output file for extracted data
+- `--maxRows <maxRows>` - Maximum number of rows (default: 100)
+- `--label [label]` - Filter by flow run label
+
+**Example:**
+```bash
+genkit eval:extractData simpleGreeting --output extracted-data.json --maxRows 50
+```
+
+## Configuration Commands
+
+### config
+
+Set development environment configuration:
+
+```bash
+genkit config
+```
+
+This command guides you through configuring your Genkit development environment.
+
+### init
+
+Initialize a project directory with Genkit:
+
+```bash
+genkit init [options]
+```
+
+This command sets up a new Genkit project with the necessary dependencies and configuration.
+
+## Global Options
+
+- `--no-update-notification` - Do not show update notification
+- `--non-interactive` - Run in non-interactive mode (use default choices)
+- `--version` - Display the CLI version
+- `--help` - Display help information
+
+## Tips
+
+- Use `genkit start` during development to automatically collect traces and test flows in the Developer UI
+- The CLI automatically detects your project root and runtime environment
+- Set the `GENKIT_ENV` environment variable to `dev` when running your application to enable development features
+- Use `--stream` flag with flow commands to see output as it's generated
+- View evaluation results in the Developer UI at `/evaluate/<evalRunId>`
+
+## Next Steps
+
+- Learn about the [Developer UI](/devtools/developer-ui) for visual testing and debugging
+- Explore [Testing](/devtools/testing) strategies for AI applications
+- Read about [Debugging](/devtools/debugging) techniques for flows

@@ -1,0 +1,732 @@
+---
+title: Prompts
+description: Reusable, testable prompt templates with dotprompt files
+---
+
+Genkit provides powerful tools for managing prompts as code. Define prompts with variables, system instructions, model configuration, and output schemas - all in a single reusable unit.
+
+## What are Prompts?
+
+A **prompt** in Genkit is a reusable template that encapsulates:
+- Prompt text with variable placeholders
+- System instructions
+- Model selection and configuration
+- Input and output schemas
+- Tools and tool choice settings
+- Few-shot examples
+
+Prompts can be defined programmatically or stored in `.prompt` files (dotprompt format).
+
+## Defining Prompts Programmatically
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const recipePrompt = ai.definePrompt(
+  {
+    name: 'recipe',
+    model: googleAI.model('gemini-2.0-flash'),
+    description: 'Generate a recipe for a dish',
+    input: {
+      schema: z.object({
+        dish: z.string().describe('The dish to create a recipe for'),
+        servings: z.number().optional(),
+      }),
+    },
+    output: {
+      schema: z.object({
+        name: z.string(),
+        ingredients: z.array(z.string()),
+        steps: z.array(z.string()),
+      }),
+    },
+    config: {
+      temperature: 0.7,
+    },
+  },
+  `You are a professional chef.
+
+Create a detailed recipe for {{dish}}.
+{{#if servings}}The recipe should serve {{servings}} people.{{/if}}`
+);
+
+// Use the prompt
+const result = await recipePrompt({ dish: 'pizza', servings: 4 });
+console.log(result.output.ingredients);
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from genkit.blocks.interfaces import Input, Output
+from pydantic import BaseModel
+
+ai = Genkit(plugins=[GoogleGenAI()])
+
+class RecipeInput(BaseModel):
+    dish: str
+    servings: int | None = None
+
+class RecipeOutput(BaseModel):
+    name: str
+    ingredients: list[str]
+    steps: list[str]
+
+recipe_prompt = ai.define_prompt(
+    name='recipe',
+    model=gemini_2_0_flash,
+    description='Generate a recipe for a dish',
+    input=Input(schema=RecipeInput),
+    output=Output(schema=RecipeOutput),
+    config={'temperature': 0.7},
+    system='You are a professional chef.',
+    prompt='Create a detailed recipe for {{dish}}. {{#if servings}}The recipe should serve {{servings}} people.{{/if}}',
+)
+
+# Use the prompt
+result = await recipe_prompt(RecipeInput(dish='pizza', servings=4))
+print(result.output.ingredients)
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/dotprompt"
+)
+
+type RecipeInput struct {
+    Dish     string `json:"dish"`
+    Servings int    `json:"servings,omitempty"`
+}
+
+type RecipeOutput struct {
+    Name        string   `json:"name"`
+    Ingredients []string `json:"ingredients"`
+    Steps       []string `json:"steps"`
+}
+
+recipePrompt, _ := dotprompt.Define("recipe",
+    `You are a professional chef.
+
+Create a detailed recipe for {{dish}}.
+{{#if servings}}The recipe should serve {{servings}} people.{{/if}}`,
+    &dotprompt.Config{
+        Model: googleai.Model("gemini-2.0-flash"),
+        Temperature: 0.7,
+    },
+)
+
+// Use the prompt
+result, _ := recipePrompt.Generate(ctx, RecipeInput{
+    Dish:     "pizza",
+    Servings: 4,
+})
+```
+</CodeGroup>
+
+## Dotprompt Files
+
+For better organization, store prompts in `.prompt` files using the **dotprompt** format:
+
+### Basic Dotprompt File
+
+```handlebars
+---
+model: googleai/gemini-2.0-flash
+config:
+  temperature: 0.7
+input:
+  schema:
+    dish: string
+    servings?(number): integer
+output:
+  schema:
+    name: string
+    ingredients: array
+    steps: array
+  format: json
+---
+
+You are a professional chef.
+
+Create a detailed recipe for {{dish}}.
+
+{{#if servings}}
+The recipe should serve {{servings}} people.
+{{/if}}
+```
+
+Save this as `prompts/recipe.prompt`.
+
+### Loading Dotprompt Files
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+  promptDir: './prompts', // Load all .prompt files
+});
+
+// Use by name
+const recipePrompt = ai.prompt('recipe');
+const result = await recipePrompt({ dish: 'pasta', servings: 2 });
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI
+from genkit.blocks.prompt import load_prompt_folder
+
+ai = Genkit(plugins=[GoogleGenAI()])
+
+# Load all .prompt files from a directory
+await load_prompt_folder(ai.registry, './prompts')
+
+# Use by name
+recipe_prompt = ai.prompt('recipe')
+result = await recipe_prompt({'dish': 'pasta', 'servings': 2})
+```
+
+```go Go
+import "github.com/firebase/genkit/go/dotprompt"
+
+// Load all .prompt files
+dotprompt.LoadFromDir("./prompts")
+
+// Use by name
+recipePrompt := dotprompt.Prompt("recipe")
+result, _ := recipePrompt.Generate(ctx, map[string]any{
+    "dish":     "pasta",
+    "servings": 2,
+})
+```
+</CodeGroup>
+
+## Handlebars Syntax
+
+Dotprompt uses **Handlebars** templating:
+
+### Variables
+
+```handlebars
+{{dish}} {{servings}}
+```
+
+### Conditionals
+
+```handlebars
+{{#if servings}}
+  This serves {{servings}} people.
+{{else}}
+  Serves 1 person.
+{{/if}}
+```
+
+### Loops
+
+```handlebars
+Ingredients you mentioned:
+{{#each ingredients}}
+- {{this}}
+{{/each}}
+```
+
+### Built-in Helpers
+
+```handlebars
+{{#list items}}
+- {{this}}
+{{/list}}
+
+{{join items ", "}}
+```
+
+## Prompt Variants
+
+Create multiple variants of a prompt for A/B testing:
+
+```handlebars
+# prompts/greeting.prompt
+---
+model: googleai/gemini-2.0-flash
+---
+Hello! How can I help you today?
+```
+
+```handlebars
+# prompts/greeting.casual.prompt
+---
+model: googleai/gemini-2.0-flash
+---
+Hey there! What's up?
+```
+
+<CodeGroup>
+```typescript JavaScript
+// Use default variant
+const greeting = ai.prompt('greeting');
+
+// Use specific variant
+const casualGreeting = ai.prompt('greeting', { variant: 'casual' });
+```
+
+```python Python
+# Use default variant
+greeting = ai.prompt('greeting')
+
+# Use specific variant  
+casual_greeting = ai.prompt('greeting', variant='casual')
+```
+</CodeGroup>
+
+## System Instructions
+
+Define system-level instructions separately from the user prompt:
+
+```handlebars
+---
+model: googleai/gemini-2.0-flash
+---
+
+{{role "system"}}
+You are a helpful assistant that speaks like a pirate.
+Always use pirate slang in your responses.
+
+{{role "user"}}
+{{userMessage}}
+```
+
+Or in the frontmatter:
+
+```yaml
+---
+model: googleai/gemini-2.0-flash
+system: "You are a helpful assistant that speaks like a pirate."
+---
+
+{{userMessage}}
+```
+
+## Multi-turn Conversations
+
+Prompts can include conversation history:
+
+<CodeGroup>
+```typescript JavaScript
+const chatPrompt = ai.definePrompt(
+  {
+    name: 'chat',
+    model: googleAI.model('gemini-2.0-flash'),
+  },
+  `{{#each messages}}
+{{#if (eq role "user")}}
+User: {{content}}
+{{else}}
+Assistant: {{content}}
+{{/if}}
+{{/each}}
+User: {{newMessage}}
+Assistant:`
+);
+
+const response = await chatPrompt({
+  messages: [
+    { role: 'user', content: 'Hi!' },
+    { role: 'assistant', content: 'Hello! How can I help?' },
+  ],
+  newMessage: 'What is 2+2?',
+});
+```
+
+```python Python
+chat_prompt = ai.define_prompt(
+    name='chat',
+    model=gemini_2_0_flash,
+    prompt='''
+{{#each messages}}
+{{#if (eq role "user")}}
+User: {{content}}
+{{else}}
+Assistant: {{content}}
+{{/if}}
+{{/each}}
+User: {{newMessage}}
+Assistant:
+''',
+)
+
+response = await chat_prompt({
+    'messages': [
+        {'role': 'user', 'content': 'Hi!'},
+        {'role': 'assistant', 'content': 'Hello! How can I help?'},
+    ],
+    'newMessage': 'What is 2+2?',
+})
+```
+</CodeGroup>
+
+## Schema References
+
+Reference shared schemas across prompts:
+
+```yaml
+---
+model: googleai/gemini-2.0-flash
+output:
+  schema: Recipe  # References a registered schema
+  format: json
+---
+
+Create a recipe for {{dish}}.
+```
+
+Register schemas:
+
+<CodeGroup>
+```typescript JavaScript
+import { z } from 'genkit';
+
+const RecipeSchema = z.object({
+  name: z.string(),
+  ingredients: z.array(z.string()),
+  steps: z.array(z.string()),
+});
+
+const ai = genkit({
+  plugins: [googleAI()],
+  schemas: {
+    Recipe: RecipeSchema,
+  },
+});
+```
+
+```python Python
+from pydantic import BaseModel
+
+class Recipe(BaseModel):
+    name: str
+    ingredients: list[str]
+    steps: list[str]
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    schemas={'Recipe': Recipe},
+)
+```
+</CodeGroup>
+
+## Tools in Prompts
+
+Prompts can specify which tools to use:
+
+```yaml
+---
+model: googleai/gemini-2.0-flash
+tools:
+  - getWeather
+  - searchWeb
+toolChoice: auto
+---
+
+Answer the user's question: {{question}}
+
+Use the available tools when needed.
+```
+
+## Overriding at Runtime
+
+Override prompt configuration when calling:
+
+<CodeGroup>
+```typescript JavaScript
+const result = await recipePrompt(
+  { dish: 'salad' },
+  {
+    config: { temperature: 1.2 },  // Override temperature
+    model: 'googleai/gemini-1.5-pro', // Override model
+  }
+);
+```
+
+```python Python
+result = await recipe_prompt(
+    {'dish': 'salad'},
+    opts={
+        'config': {'temperature': 1.2},
+        'model': 'googleai/gemini-1.5-pro',
+    },
+)
+```
+</CodeGroup>
+
+## Streaming Prompt Responses
+
+Prompts support streaming:
+
+<CodeGroup>
+```typescript JavaScript
+const { stream, response } = recipePrompt.stream({ dish: 'curry' });
+
+for await (const chunk of stream) {
+  console.log(chunk.text);
+}
+
+const final = await response;
+console.log(final.output);
+```
+
+```python Python
+result = recipe_prompt.stream({'dish': 'curry'})
+
+async for chunk in result.stream:
+    print(chunk.text, end='')
+
+final = await result.response
+print(final.output)
+```
+</CodeGroup>
+
+## Rendering Without Execution
+
+Render a prompt to see the final message without calling the model:
+
+<CodeGroup>
+```typescript JavaScript
+const rendered = await recipePrompt.render({ dish: 'tacos', servings: 6 });
+
+console.log(rendered.messages);
+console.log(rendered.config);
+```
+
+```python Python
+rendered = await recipe_prompt.render({'dish': 'tacos', 'servings': 6})
+
+print(rendered.messages)
+print(rendered.config)
+```
+</CodeGroup>
+
+Useful for:
+- Testing prompt templates
+- Debugging variable substitution
+- Inspecting the exact request sent to models
+
+## Prompts as Tools
+
+Convert a prompt into a tool that models can call:
+
+<CodeGroup>
+```typescript JavaScript
+const recipeTool = await recipePrompt.asTool();
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.0-flash'),
+  prompt: 'Suggest a healthy dinner',
+  tools: [recipeTool],
+});
+
+// Model can now call the recipe prompt as a tool
+```
+
+```python Python
+recipe_tool = await recipe_prompt.as_tool()
+
+response = await ai.generate(
+    model=gemini_2_0_flash,
+    prompt='Suggest a healthy dinner',
+    tools=[recipe_tool],
+)
+```
+</CodeGroup>
+
+## Prompt File Organization
+
+Organize prompts in directories:
+
+```
+prompts/
+├── recipe.prompt
+├── recipe.dessert.prompt    # Variant
+├── greeting.prompt
+├── greeting.casual.prompt  # Variant
+└── analysis/
+    ├── sentiment.prompt
+    └── summary.prompt
+```
+
+Access nested prompts:
+
+```typescript
+const sentimentPrompt = ai.prompt('analysis/sentiment');
+```
+
+## Partials (Shared Snippets)
+
+Reuse common prompt sections:
+
+```handlebars
+# prompts/_style.prompt
+---
+---
+Write in a professional, technical style.
+Use clear, concise language.
+```
+
+```handlebars
+# prompts/article.prompt
+---
+model: googleai/gemini-2.0-flash
+---
+
+{{> _style}}
+
+Write an article about {{topic}}.
+```
+
+Partials start with `_` and are imported with `{{> _partialName}}`.
+
+## Best Practices
+
+### 1. Use .prompt Files for Production
+
+Store prompts as files for:
+- Version control
+- Team collaboration  
+- Easy testing in Dev UI
+- Non-engineer editing
+
+### 2. Define Clear Schemas
+
+Always specify input and output schemas:
+
+```yaml
+input:
+  schema:
+    query: string
+    maxResults?(number): integer
+output:
+  schema:
+    results: array
+  format: json
+```
+
+### 3. Use Variants for Testing
+
+Test different approaches:
+- `prompt.prompt` - default version
+- `prompt.concise.prompt` - shorter responses
+- `prompt.detailed.prompt` - longer responses
+
+### 4. Add Descriptions
+
+Document your prompts:
+
+```yaml
+---
+model: googleai/gemini-2.0-flash
+description: |
+  Analyzes code for potential bugs and suggests fixes.
+  Works best with Python, JavaScript, and Go.
+---
+```
+
+### 5. Test with Real Data
+
+Use the Dev UI to test prompts with real inputs before deploying.
+
+## Example: Complete Recipe Generator
+
+```handlebars
+# prompts/recipe.prompt
+---
+model: googleai/gemini-2.0-flash
+config:
+  temperature: 0.7
+  maxOutputTokens: 2000
+input:
+  schema:
+    food: string
+    ingredients?(array): string
+    dietaryRestrictions?(array): string
+output:
+  schema:
+    name: string
+    description: string
+    prepTime: string
+    cookTime: string
+    servings: integer
+    ingredients:
+      type: array
+      items:
+        type: object
+        properties:
+          amount: string
+          item: string
+    steps: array
+    tips: array
+  format: json
+---
+
+You are a chef famous for making creative recipes that can be prepared in 45 minutes or less.
+
+Generate a recipe for {{food}}.
+
+{{#if ingredients}}
+Make sure to include the following ingredients:
+{{#each ingredients}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+{{#if dietaryRestrictions}}
+Dietary restrictions:
+{{#each dietaryRestrictions}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+Provide a complete recipe with measurements, steps, and tips.
+```
+
+Usage:
+
+<CodeGroup>
+```typescript JavaScript
+const recipePrompt = ai.prompt('recipe');
+
+const result = await recipePrompt({
+  food: 'pasta carbonara',
+  ingredients: ['eggs', 'parmesan'],
+  dietaryRestrictions: ['no bacon'],
+});
+
+console.log(result.output.name);
+console.log(result.output.steps);
+```
+
+```python Python
+recipe_prompt = ai.prompt('recipe')
+
+result = await recipe_prompt({
+    'food': 'pasta carbonara',
+    'ingredients': ['eggs', 'parmesan'],
+    'dietaryRestrictions': ['no bacon'],
+})
+
+print(result.output.name)
+print(result.output.steps)
+```
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [Tools](/concepts/tools) - extending prompts with custom functions
+- Explore [Flows](/concepts/flows) - building workflows with prompts
+- See [Models](/concepts/models) - understanding model behavior

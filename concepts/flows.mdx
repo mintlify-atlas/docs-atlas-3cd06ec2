@@ -1,0 +1,461 @@
+---
+title: Flows
+description: Observable, type-safe functions for building AI workflows
+---
+
+Flows are Genkit's way of defining AI workflows with built-in observability, streaming support, and type safety. A flow is simply a function that Genkit traces, making every step visible for debugging and monitoring.
+
+## What are Flows?
+
+A **Flow** is an observable, streamable, (optionally) strongly typed function. Every flow execution is automatically traced, and flows can be deployed as HTTP endpoints or called locally.
+
+<CodeGroup>
+```typescript JavaScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+  model: googleAI.model('gemini-2.0-flash'),
+});
+
+// Define a flow with input/output schemas
+export const jokeFlow = ai.defineFlow(
+  {
+    name: 'jokeFlow',
+    inputSchema: z.object({ topic: z.string() }),
+    outputSchema: z.object({ joke: z.string() }),
+  },
+  async (input) => {
+    const { text } = await ai.generate({
+      prompt: `Tell me a joke about ${input.topic}`,
+    });
+    return { joke: text };
+  }
+);
+
+// Run the flow
+const result = await jokeFlow({ topic: 'bananas' });
+console.log(result.joke);
+```
+
+```python Python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from pydantic import BaseModel
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+class JokeInput(BaseModel):
+    topic: str
+
+class JokeOutput(BaseModel):
+    joke: str
+
+@ai.flow()
+async def joke_flow(input: JokeInput) -> JokeOutput:
+    response = await ai.generate(
+        prompt=f"Tell me a joke about {input.topic}"
+    )
+    return JokeOutput(joke=response.text)
+
+# Run the flow
+result = await joke_flow(JokeInput(topic="bananas"))
+print(result.joke)
+```
+
+```go Go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/firebase/genkit/go/core"
+    "github.com/firebase/genkit/go/ai"
+)
+
+type JokeInput struct {
+    Topic string `json:"topic"`
+}
+
+type JokeOutput struct {
+    Joke string `json:"joke"`
+}
+
+func JokeFlow(ctx context.Context, input JokeInput) (JokeOutput, error) {
+    resp, err := ai.Generate(ctx, &ai.GenerateRequest{
+        Prompt: fmt.Sprintf("Tell me a joke about %s", input.Topic),
+    })
+    if err != nil {
+        return JokeOutput{}, err
+    }
+    return JokeOutput{Joke: resp.Text()}, nil
+}
+
+func main() {
+    flow := core.DefineFlow("jokeFlow", JokeFlow)
+    result, _ := flow.Run(context.Background(), JokeInput{Topic: "bananas"})
+    fmt.Println(result.Joke)
+}
+```
+</CodeGroup>
+
+## Why Use Flows?
+
+Flows provide several key benefits:
+
+### 1. Automatic Tracing
+
+Every flow execution is traced end-to-end, capturing:
+- **Input and output** at each step
+- **Timing information** for performance analysis
+- **Model calls** and their responses
+- **Tool invocations** and results
+- **Errors and stack traces**
+
+### 2. Developer UI Integration
+
+Flows appear in the Genkit Developer UI, where you can:
+- Browse all defined flows
+- Run flows with test inputs
+- View execution traces
+- Inspect intermediate results
+- Debug failures
+
+### 3. Deployability
+
+Flows can be deployed as HTTP endpoints:
+
+<CodeGroup>
+```typescript JavaScript
+import { startFlowServer } from '@genkit-ai/express';
+
+startFlowServer({
+  flows: [jokeFlow],
+  port: 3400,
+});
+```
+
+```python Python
+from genkit.core.flows import create_flows_asgi_app
+import uvicorn
+
+app = create_flows_asgi_app(registry=ai.registry)
+uvicorn.run(app, host='0.0.0.0', port=3400)
+```
+</CodeGroup>
+
+### 4. Streaming Support
+
+Flows can stream responses in real-time:
+
+<CodeGroup>
+```typescript JavaScript
+const { stream } = streamFlow({
+  url: 'http://localhost:3400/jokeFlow',
+  input: { topic: 'programming' },
+});
+
+for await (const chunk of stream) {
+  console.log(chunk);
+}
+```
+
+```python Python
+result = joke_flow.stream(JokeInput(topic="programming"))
+
+async for chunk in result.stream:
+    print(chunk.text, end='')
+
+final = await result.response
+```
+</CodeGroup>
+
+## Flow Execution Traces
+
+When you run a flow, Genkit creates a detailed trace:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Flow: jokeFlow                                                │
+│ Input: { topic: "bananas" }                                   │
+│ Duration: 1.2s                                               │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Step 1: generate (model call)                               │
+│  ├─ Model: googleai/gemini-2.0-flash                         │
+│  ├─ Prompt: "Tell me a joke about bananas"                   │
+│  ├─ Response: "Why did the banana go to..."                  │
+│  └─ Duration: 1.1s                                           │
+│                                                              │
+│  Output: { joke: "Why did the banana go to..." }             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Flow Steps with `run()`
+
+You can organize flows into named steps for better observability:
+
+<CodeGroup>
+```typescript JavaScript
+import { ai } from './genkit';
+
+export const researchFlow = ai.defineFlow(
+  { name: 'researchFlow' },
+  async (topic: string) => {
+    // Each step appears separately in traces
+    const facts = await ai.run('gather-facts', async () => {
+      return await ai.generate({
+        prompt: `List 3 facts about ${topic}`,
+      });
+    });
+
+    const summary = await ai.run('summarize', async () => {
+      return await ai.generate({
+        prompt: `Summarize these facts: ${facts.text}`,
+      });
+    });
+
+    return summary.text;
+  }
+);
+```
+
+```python Python
+from genkit import run
+
+@ai.flow()
+async def research_flow(topic: str) -> str:
+    # Each step appears separately in traces
+    facts = await run('gather-facts', lambda: ai.generate(
+        prompt=f"List 3 facts about {topic}"
+    ))
+
+    summary = await run('summarize', lambda: ai.generate(
+        prompt=f"Summarize these facts: {facts.text}"
+    ))
+
+    return summary.text
+```
+
+```go Go
+import "github.com/firebase/genkit/go/core"
+
+func ResearchFlow(ctx context.Context, topic string) (string, error) {
+    facts, err := core.Run(ctx, "gather-facts", func() (string, error) {
+        resp, err := ai.Generate(ctx, &ai.GenerateRequest{
+            Prompt: fmt.Sprintf("List 3 facts about %s", topic),
+        })
+        if err != nil {
+            return "", err
+        }
+        return resp.Text(), nil
+    })
+    if err != nil {
+        return "", err
+    }
+
+    summary, err := core.Run(ctx, "summarize", func() (string, error) {
+        resp, err := ai.Generate(ctx, &ai.GenerateRequest{
+            Prompt: fmt.Sprintf("Summarize these facts: %s", facts),
+        })
+        if err != nil {
+            return "", err
+        }
+        return resp.Text(), nil
+    })
+    return summary, err
+}
+```
+</CodeGroup>
+
+Each `run()` call creates its own span in the trace, making it easy to see which steps take the most time or where errors occur.
+
+## Multi-Step Agentic Flows
+
+Flows are perfect for building agentic workflows with tool calling:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+@ai.tool()
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    # Call weather API...
+    return f"Weather in {city}: Sunny, 72°F"
+
+@ai.tool()
+def search_restaurants(city: str, cuisine: str) -> str:
+    """Search for restaurants in a city."""
+    # Call restaurant API...
+    return f"Found 5 {cuisine} restaurants in {city}"
+
+@ai.flow()
+async def travel_planner(destination: str) -> str:
+    """Plan a trip with weather and restaurant recommendations."""
+    response = await ai.generate(
+        prompt=f"Plan a trip to {destination}. Check the weather and suggest restaurants.",
+        tools=['get_weather', 'search_restaurants'],
+    )
+    return response.text
+```
+
+The flow trace will show:
+1. The initial model call
+2. Tool invocations (weather check, restaurant search)
+3. The model's follow-up response
+4. Final output
+
+## Deploying Flows
+
+Flows are designed to be deployed as HTTP endpoints:
+
+### Built-in Flow Server
+
+The simplest way - all flows are automatically exposed:
+
+<CodeGroup>
+```typescript JavaScript
+import { startFlowServer } from '@genkit-ai/express';
+
+startFlowServer({
+  flows: [jokeFlow, researchFlow],
+});
+
+// Exposes:
+// POST /jokeFlow
+// POST /researchFlow
+```
+
+```python Python
+from genkit.core.flows import create_flows_asgi_app
+import uvicorn
+
+app = create_flows_asgi_app(registry=ai.registry)
+uvicorn.run(app, host='0.0.0.0', port=3400)
+
+# Exposes ALL registered flows:
+# POST /joke_flow
+# POST /research_flow
+```
+</CodeGroup>
+
+### Framework Integration
+
+For more control, integrate with your web framework:
+
+<CodeGroup>
+```typescript JavaScript
+import express from 'express';
+import { toExpressHandler } from 'genkit/express';
+
+const app = express();
+
+app.post('/api/joke', toExpressHandler(jokeFlow));
+
+app.listen(3000);
+```
+
+```python Python
+from flask import Flask, request
+from genkit.plugins.flask import genkit_flask_handler
+
+app = Flask(__name__)
+
+@app.route('/api/joke', methods=['POST'])
+@genkit_flask_handler(ai)
+@ai.flow()
+async def joke_endpoint(topic: str) -> str:
+    response = await ai.generate(prompt=f"Tell a joke about {topic}")
+    return response.text
+```
+</CodeGroup>
+
+## Deployment Targets
+
+Flows can be deployed anywhere:
+
+- **Cloud Run**: Serverless, auto-scaling HTTP endpoints
+- **Firebase Functions**: Integrated with Firebase services
+- **Express/Flask/FastAPI**: Any Node.js or Python web server
+- **Kubernetes**: Containerized deployments
+- **AWS Lambda**: Serverless on AWS
+- **Azure Functions**: Serverless on Azure
+
+## Best Practices
+
+### 1. Use Input/Output Schemas
+
+Always define schemas for type safety and validation:
+
+```typescript
+const myFlow = ai.defineFlow(
+  {
+    name: 'myFlow',
+    inputSchema: z.object({ /* ... */ }),
+    outputSchema: z.object({ /* ... */ }),
+  },
+  async (input) => { /* ... */ }
+);
+```
+
+### 2. Break Down Complex Flows
+
+Use `run()` to create named steps:
+
+```python
+@ai.flow()
+async def complex_flow(input: str) -> str:
+    step1 = await run('preprocess', lambda: preprocess(input))
+    step2 = await run('analyze', lambda: analyze(step1))
+    step3 = await run('format', lambda: format_output(step2))
+    return step3
+```
+
+### 3. Handle Errors Gracefully
+
+Flows should handle expected errors:
+
+```typescript
+export const safeFlow = ai.defineFlow(
+  { name: 'safeFlow' },
+  async (input: string) => {
+    try {
+      const result = await ai.generate({ prompt: input });
+      return { success: true, data: result.text };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+);
+```
+
+### 4. Use Flows for All AI Logic
+
+Even simple operations benefit from tracing:
+
+```python
+@ai.flow()
+async def translate(text: str, target_lang: str) -> str:
+    """Simple translation flow - still gets full tracing."""
+    response = await ai.generate(
+        prompt=f"Translate to {target_lang}: {text}"
+    )
+    return response.text
+```
+
+## Next Steps
+
+- Learn about [Models](/concepts/models) - working with AI models in flows
+- Explore [Tools](/concepts/tools) - extending flows with custom functions
+- Understand [Prompts](/concepts/prompts) - managing prompt templates
+- See [Observability](/concepts/observability) - monitoring flow execution

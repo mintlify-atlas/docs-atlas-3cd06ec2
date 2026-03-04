@@ -1,0 +1,464 @@
+---
+title: Retrievers API
+description: API reference for retrievers and indexers in Genkit (JavaScript/TypeScript)
+---
+
+Retrievers find relevant documents based on queries, while indexers store documents for retrieval.
+
+## defineRetriever()
+
+Defines and registers a retriever.
+
+```typescript
+import { defineRetriever } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const myRetriever = defineRetriever(
+  registry,
+  {
+    name: 'myRetriever',
+    configSchema: z.object({
+      k: z.number().default(10),
+    }),
+    info: {
+      label: 'My Vector Store Retriever',
+    },
+  },
+  async (query, options) => {
+    // Retrieve relevant documents
+    const docs = await vectorStore.search(query.text(), options.k);
+    
+    return {
+      documents: docs,
+    };
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="options" type="object" required>
+  <ParamField path="name" type="string" required>
+    Unique name for the retriever
+  </ParamField>
+  
+  <ParamField path="configSchema" type="OptionsType">
+    Zod schema for retriever-specific configuration
+  </ParamField>
+  
+  <ParamField path="info" type="RetrieverInfo">
+    Metadata about the retriever
+    
+    <Expandable title="RetrieverInfo properties">
+      <ParamField path="label" type="string">
+        Human-readable label
+      </ParamField>
+      
+      <ParamField path="supports" type="object">
+        <ParamField path="media" type="boolean">
+          Whether the retriever supports media in queries
+        </ParamField>
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</ParamField>
+
+<ParamField path="runner" type="RetrieverFn<OptionsType>" required>
+  Implementation function
+  
+  **Function signature:**
+  ```typescript
+  (query: Document, options: z.infer<OptionsType>) => Promise<RetrieverResponse>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="retriever" type="RetrieverAction<OptionsType>">
+  A retriever action that can be used with `retrieve()`
+</ResponseField>
+
+## retrieve()
+
+Retrieves documents based on a query.
+
+```typescript
+import { retrieve } from '@genkit-ai/ai';
+
+const documents = await retrieve(registry, {
+  retriever: 'myRetriever',
+  query: 'What is Genkit?',
+  options: { k: 5 },
+});
+
+console.log(documents); // Array<Document>
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="params" type="RetrieverParams<CustomOptions>" required>
+  <ParamField path="retriever" type="RetrieverArgument<CustomOptions>" required>
+    Retriever to use (string name, RetrieverAction, or RetrieverReference)
+  </ParamField>
+  
+  <ParamField path="query" type="string | DocumentData" required>
+    Query text or document
+  </ParamField>
+  
+  <ParamField path="options" type="z.infer<CustomOptions>">
+    Retriever-specific configuration
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="documents" type="Document[]">
+  Array of retrieved documents
+</ResponseField>
+
+## retrieverRef()
+
+Creates a reference to a retriever.
+
+```typescript
+import { retrieverRef } from '@genkit-ai/ai';
+
+const myRetrieverRef = retrieverRef({
+  name: 'myRetriever',
+  info: {
+    label: 'My Retriever',
+  },
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="RetrieverReference<CustomOptionsSchema>" required>
+  <ParamField path="name" type="string" required>
+    Retriever name
+  </ParamField>
+  
+  <ParamField path="configSchema" type="CustomOptionsSchema">
+    Configuration schema
+  </ParamField>
+  
+  <ParamField path="info" type="RetrieverInfo">
+    Retriever metadata
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="reference" type="RetrieverReference<CustomOptionsSchema>">
+  A retriever reference
+</ResponseField>
+
+## defineIndexer()
+
+Defines and registers an indexer for storing documents.
+
+```typescript
+import { defineIndexer } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const myIndexer = defineIndexer(
+  registry,
+  {
+    name: 'myIndexer',
+    configSchema: z.object({
+      collectionName: z.string(),
+    }),
+    embedderInfo: {
+      dimensions: 768,
+    },
+  },
+  async (documents, options) => {
+    // Store documents in vector database
+    await vectorStore.add(
+      options.collectionName,
+      documents
+    );
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="options" type="object" required>
+  <ParamField path="name" type="string" required>
+    Unique name for the indexer
+  </ParamField>
+  
+  <ParamField path="configSchema" type="IndexerOptions">
+    Zod schema for indexer-specific configuration
+  </ParamField>
+  
+  <ParamField path="embedderInfo" type="EmbedderInfo">
+    Information about the embedder used by this indexer
+  </ParamField>
+</ParamField>
+
+<ParamField path="runner" type="IndexerFn<IndexerOptions>" required>
+  Implementation function
+  
+  **Function signature:**
+  ```typescript
+  (documents: Document[], options: z.infer<IndexerOptions>) => Promise<void>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="indexer" type="IndexerAction<IndexerOptions>">
+  An indexer action that can be used with `index()`
+</ResponseField>
+
+## index()
+
+Indexes documents for retrieval.
+
+```typescript
+import { index, Document } from '@genkit-ai/ai';
+
+await index(registry, {
+  indexer: 'myIndexer',
+  documents: [
+    Document.fromText('Document 1 content'),
+    Document.fromText('Document 2 content'),
+  ],
+  options: { collectionName: 'my-collection' },
+});
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="params" type="IndexerParams<CustomOptions>" required>
+  <ParamField path="indexer" type="IndexerArgument<CustomOptions>" required>
+    Indexer to use (string name, IndexerAction, or IndexerReference)
+  </ParamField>
+  
+  <ParamField path="documents" type="DocumentData[]" required>
+    Documents to index
+  </ParamField>
+  
+  <ParamField path="options" type="z.infer<CustomOptions>">
+    Indexer-specific configuration
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="void" type="Promise<void>">
+  Promise that resolves when indexing is complete
+</ResponseField>
+
+## indexerRef()
+
+Creates a reference to an indexer.
+
+```typescript
+import { indexerRef } from '@genkit-ai/ai';
+
+const myIndexerRef = indexerRef({
+  name: 'myIndexer',
+  info: {
+    label: 'My Indexer',
+  },
+});
+```
+
+### Parameters
+
+<ParamField path="options" type="IndexerReference<CustomOptionsSchema>" required>
+  <ParamField path="name" type="string" required>
+    Indexer name
+  </ParamField>
+  
+  <ParamField path="configSchema" type="CustomOptionsSchema">
+    Configuration schema
+  </ParamField>
+  
+  <ParamField path="info" type="IndexerInfo">
+    Indexer metadata
+  </ParamField>
+</ParamField>
+
+### Returns
+
+<ResponseField name="reference" type="IndexerReference<CustomOptionsSchema>">
+  An indexer reference
+</ResponseField>
+
+## defineSimpleRetriever()
+
+Defines a simple retriever that maps data into documents.
+
+```typescript
+import { defineSimpleRetriever } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const menuRetriever = defineSimpleRetriever(
+  registry,
+  {
+    name: 'menuRetriever',
+    configSchema: z.object({
+      category: z.string().optional(),
+    }),
+    content: 'description',
+    metadata: ['id', 'name', 'price'],
+  },
+  async (query, config) => {
+    // Query database and return items
+    return await db.searchMenu(query.text(), config);
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="options" type="SimpleRetrieverOptions<C, R>" required>
+  <ParamField path="name" type="string" required>
+    Retriever name
+  </ParamField>
+  
+  <ParamField path="configSchema" type="C">
+    Configuration schema
+  </ParamField>
+  
+  <ParamField path="content" type="string | ((item: R) => Document['content'] | string)">
+    How to extract content from returned items
+  </ParamField>
+  
+  <ParamField path="metadata" type="string[] | ((item: R) => Document['metadata'])">
+    How to extract metadata from returned items
+  </ParamField>
+</ParamField>
+
+<ParamField path="handler" type="(query: Document, config: z.infer<C>) => Promise<R[]>" required>
+  Function that queries the datastore
+</ParamField>
+
+### Returns
+
+<ResponseField name="retriever" type="RetrieverAction">
+  A retriever action
+</ResponseField>
+
+## Types
+
+### RetrieverResponse
+
+```typescript
+interface RetrieverResponse {
+  documents: DocumentData[];
+}
+```
+
+### RetrieverAction
+
+```typescript
+type RetrieverAction<CustomOptions extends z.ZodTypeAny = z.ZodTypeAny> =
+  Action<typeof RetrieverRequestSchema, typeof RetrieverResponseSchema> & {
+    __configSchema?: CustomOptions;
+  };
+```
+
+### IndexerAction
+
+```typescript
+type IndexerAction<IndexerOptions extends z.ZodTypeAny = z.ZodTypeAny> =
+  Action<typeof IndexerRequestSchema, z.ZodVoid> & {
+    __configSchema?: IndexerOptions;
+  };
+```
+
+### CommonRetrieverOptionsSchema
+
+```typescript
+const CommonRetrieverOptionsSchema = z.object({
+  k: z.number().describe('Number of documents to retrieve').optional(),
+});
+```
+
+## Example: Complete RAG Setup
+
+```typescript
+import { ai } from './genkit';
+import { Document } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+// Define indexer
+const myIndexer = ai.defineIndexer(
+  {
+    name: 'myVectorStore',
+    configSchema: z.object({
+      collection: z.string(),
+    }),
+  },
+  async (documents, options) => {
+    const embeddings = await embedDocuments(documents);
+    await vectorDb.insert(options.collection, documents, embeddings);
+  }
+);
+
+// Define retriever
+const myRetriever = ai.defineRetriever(
+  {
+    name: 'myVectorStore',
+    configSchema: z.object({
+      k: z.number().default(5),
+    }),
+  },
+  async (query, options) => {
+    const queryEmbedding = await embedText(query.text());
+    const results = await vectorDb.search(queryEmbedding, options.k);
+    
+    return {
+      documents: results.map(r => r.document),
+    };
+  }
+);
+
+// Index documents
+await ai.index({
+  indexer: myIndexer,
+  documents: [
+    Document.fromText('Genkit is a framework for AI apps'),
+    Document.fromText('Firebase is a backend platform'),
+  ],
+  options: { collection: 'docs' },
+});
+
+// Retrieve and generate
+const docs = await ai.retrieve({
+  retriever: myRetriever,
+  query: 'What is Genkit?',
+  options: { k: 3 },
+});
+
+const response = await ai.generate({
+  model: gemini15Flash,
+  prompt: 'Answer based on context',
+  docs,
+});
+```

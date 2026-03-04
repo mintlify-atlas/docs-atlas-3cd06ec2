@@ -1,0 +1,256 @@
+---
+title: 'Google GenAI Plugin'
+description: 'Use Google AI (Gemini) and Vertex AI models with Genkit'
+---
+
+# Google GenAI Plugin
+
+The `@genkit-ai/google-genai` plugin provides a unified interface to connect with Google's generative AI models, offering access through both the **Gemini Developer API** and **Vertex AI**. It replaces the previous `googleAI` and `vertexAI` plugins.
+
+## Installation
+
+```bash
+npm install @genkit-ai/google-genai
+```
+
+## Configuration
+
+This unified plugin exports two main initializers:
+
+- **`googleAI`**: Access models via the Gemini Developer API using API key authentication
+- **`vertexAI`**: Access models via Google Cloud Vertex AI
+
+### Using Gemini Developer API (`googleAI`)
+
+Ideal for quick prototyping and access to models available in Google AI Studio.
+
+**Authentication:** Requires a Google AI API Key from [Google AI Studio](https://aistudio.google.com/apikey). Provide the key via `GEMINI_API_KEY` or `GOOGLE_API_KEY` environment variables, or pass it in the plugin configuration.
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    // Or with an explicit API key:
+    // googleAI({ apiKey: 'your-api-key' }),
+  ],
+});
+```
+
+### Using Vertex AI (`vertexAI`)
+
+Suitable for applications leveraging Google Cloud's AI infrastructure.
+
+**Authentication Methods:**
+
+- **Application Default Credentials (ADC):** Standard method for production. Uses credentials from the environment (service account on GCP, user credentials from `gcloud auth application-default login` locally). Requires a Google Cloud Project with billing and Vertex AI API enabled.
+
+- **Vertex AI Express Mode:** Streamlined way to try Vertex AI features using just an API key, without billing setup. Ideal for quick experimentation with generous free tier quotas. [Learn more about Express Mode](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview).
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    // Using Application Default Credentials (Recommended for full features)
+    vertexAI({ location: 'us-central1' }), // Regional endpoint
+    // vertexAI({ location: 'global' }),      // Global endpoint
+
+    // OR
+
+    // Using Vertex AI Express Mode (Easy to start, some limitations)
+    // vertexAI({ apiKey: process.env.VERTEX_EXPRESS_API_KEY }),
+  ],
+});
+```
+
+**Note:** When using Express Mode, don't provide `projectId` and `location` in the plugin config.
+
+### Using Both Google AI and Vertex AI
+
+You can configure both plugins to access models or features from both services:
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI, vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    vertexAI(),
+  ],
+});
+```
+
+## Available Models
+
+### Gemini Models
+- `gemini-2.5-flash` - Fast, efficient model for most tasks
+- `gemini-2.5-pro` - Advanced reasoning and complex tasks
+- `gemini-1.5-flash` - Previous generation fast model
+- `gemini-1.5-pro` - Previous generation advanced model
+
+### Image Generation
+- `imagen-3.0-generate-002` - High-quality image generation
+
+### Embeddings
+- `gemini-embedding-001` - Text embeddings (Google AI)
+- `text-embedding-005` - Text embeddings (Vertex AI)
+
+### Music Generation (Vertex AI Only)
+- `lyria-002` - AI music generation
+
+## Usage Examples
+
+### Text Generation with Google AI
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const response = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Tell me something interesting about Google AI.',
+});
+
+console.log(response.text());
+```
+
+### Text Generation with Vertex AI
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()],
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('gemini-2.5-pro'),
+  prompt: 'Explain Vertex AI in simple terms.',
+});
+
+console.log(response.text());
+```
+
+### Text Embedding
+
+**With Google AI:**
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const embeddings = await ai.embed({
+  embedder: googleAI.embedder('gemini-embedding-001'),
+  content: 'Embed this text.',
+});
+```
+
+**With Vertex AI:**
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()],
+});
+
+const embeddings = await ai.embed({
+  embedder: vertexAI.embedder('text-embedding-005'),
+  content: 'Embed this text.',
+});
+```
+
+### Image Generation (Imagen)
+
+**With Google AI:**
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const response = await ai.generate({
+  model: googleAI.model('imagen-3.0-generate-002'),
+  prompt: 'A beautiful watercolor painting of a castle in the mountains.',
+});
+
+const generatedImage = response.media();
+```
+
+**With Vertex AI:**
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()],
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('imagen-3.0-generate-002'),
+  prompt: 'A beautiful watercolor painting of a castle in the mountains.',
+});
+
+const generatedImage = response.media();
+```
+
+### Music Generation (Lyria - Vertex AI Only)
+
+```typescript
+import { genkit } from 'genkit';
+import { vertexAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [vertexAI()],
+});
+
+const response = await ai.generate({
+  model: vertexAI.model('lyria-002'),
+  prompt: 'A relaxing, instrumental piano track.',
+});
+
+const generatedAudio = response.media();
+```
+
+## Key Differences
+
+### Google AI (`googleAI`)
+- Easier setup for smaller projects
+- Great for prototyping with Google AI Studio
+- Uses API keys for authentication
+- Access to Gemini and Imagen models
+
+### Vertex AI (`vertexAI`)
+- Enterprise-ready with Google Cloud IAM
+- Integrates with other Vertex AI services
+- Broader range of models and features
+- Supports Lyria music generation
+- Fine-tuning capabilities
+- Robust governance and compliance
+- Express Mode for easy experimentation
+
+## Links
+
+- [Google AI Studio](https://aistudio.google.com/)
+- [Vertex AI](https://cloud.google.com/vertex-ai)
+- [Vertex AI Express Mode](https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/google-genai)

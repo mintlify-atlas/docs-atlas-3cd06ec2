@@ -1,0 +1,334 @@
+---
+title: Python Quickstart
+description: Build your first AI application with Genkit in Python (Alpha)
+---
+
+<Warning>
+Python support is currently in **Alpha**. The core features are functional, but the API may change in future releases.
+</Warning>
+
+This guide will help you create your first AI-powered application using Genkit for Python. You'll learn how to initialize Genkit, make your first generation request, and work with flows.
+
+## Prerequisites
+
+- Python 3.10 or later
+- pip or uv package manager
+- A Google AI API key (get one at [Google AI Studio](https://aistudio.google.com/apikey))
+
+## Step 1: Install Genkit
+
+Install Genkit with the Google AI plugin:
+
+<CodeGroup>
+```bash pip
+pip install "genkit[google-genai]"
+```
+
+```bash uv (recommended)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install "genkit[google-genai]"
+```
+</CodeGroup>
+
+## Step 2: Install Genkit CLI
+
+The CLI is the same across all languages:
+
+```bash
+npm install -g genkit-cli
+```
+
+## Step 3: Set Your API Key
+
+Set your Google AI API key as an environment variable:
+
+```bash
+export GOOGLE_GENAI_API_KEY="your-api-key-here"
+```
+
+<Tip>
+Create a `.env` file in your project root:
+```
+GOOGLE_GENAI_API_KEY=your-api-key-here
+```
+</Tip>
+
+## Step 4: Create Your First Application
+
+Create a file named `app.py`:
+
+```python app.py
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+response = await ai.generate(prompt="Tell me a joke")
+print(response.text)
+```
+
+<Note>
+Genkit for Python uses async/await. You'll need to run this in an async context.
+</Note>
+
+## Step 5: Run Your Application
+
+Since Genkit uses async functions, you need to run it properly:
+
+```python app.py
+import asyncio
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+async def main():
+    ai = Genkit(
+        plugins=[GoogleGenAI()],
+        model=gemini_2_0_flash,
+    )
+
+    response = await ai.generate(prompt="Tell me a joke")
+    print(response.text)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Run with the Genkit CLI for tracing:
+
+```bash
+genkit start -- python app.py
+```
+
+Or run directly:
+
+```bash
+python app.py
+```
+
+## Access the Developer UI
+
+When running with `genkit start`, open http://localhost:4000 to access the Developer UI.
+
+## Create a Flow
+
+Flows are the primary abstraction in Genkit for encapsulating AI logic:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+@ai.flow()
+async def tell_joke(topic: str) -> str:
+    response = await ai.generate(
+        prompt=f"Tell me a joke about {topic}"
+    )
+    return response.text
+
+# Run the flow
+joke = await tell_joke("programming")
+print(joke)
+```
+
+## Generate Structured Output
+
+Genkit can generate type-safe structured data using Pydantic models:
+
+```python
+from pydantic import BaseModel
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+
+class Recipe(BaseModel):
+    title: str
+    ingredients: list[str]
+    steps: list[str]
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+response = await ai.generate(
+    prompt="Create a recipe for chocolate chip cookies",
+    output_schema=Recipe
+)
+
+recipe = response.output
+print(f"Title: {recipe.title}")
+print(f"Ingredients: {recipe.ingredients}")
+```
+
+## Define Tools
+
+Tools allow AI models to call your Python functions:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from pydantic import BaseModel
+
+class WeatherInput(BaseModel):
+    location: str
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+@ai.tool()
+async def get_weather(input: WeatherInput) -> str:
+    # In a real app, call a weather API
+    return f"The weather in {input.location} is sunny and 72°F"
+
+response = await ai.generate(
+    prompt="What's the weather in San Francisco?",
+    tools=[get_weather]
+)
+print(response.text)
+```
+
+## Create an HTTP Server
+
+Deploy your flows as HTTP endpoints using the built-in flow server:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from genkit.servers.asgi import create_flows_asgi_app
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+@ai.flow()
+async def tell_joke(topic: str) -> str:
+    response = await ai.generate(
+        prompt=f"Tell me a joke about {topic}"
+    )
+    return response.text
+
+# Create ASGI app that exposes all flows
+app = create_flows_asgi_app(registry=ai.registry)
+
+# Run with: uvicorn app:app --reload
+```
+
+Run the server:
+
+```bash
+uvicorn app:app --reload
+```
+
+Test your endpoint:
+
+```bash
+curl -X POST http://localhost:8000/tell_joke \
+  -H "Content-Type: application/json" \
+  -d '{"data": "programming"}'
+```
+
+## Use with Flask
+
+You can also integrate Genkit with Flask:
+
+```python
+from flask import Flask
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI, gemini_2_0_flash
+from genkit.plugins.flask import genkit_flask_handler
+
+app = Flask(__name__)
+
+ai = Genkit(
+    plugins=[GoogleGenAI()],
+    model=gemini_2_0_flash,
+)
+
+@app.route('/joke', methods=['POST'])
+@genkit_flask_handler(ai)
+@ai.flow()
+async def joke(topic: str) -> str:
+    response = await ai.generate(
+        prompt=f"Tell me a joke about {topic}"
+    )
+    return response.text
+
+if __name__ == '__main__':
+    app.run()
+```
+
+## Try Other Model Providers
+
+Genkit supports multiple AI providers:
+
+```python
+from genkit import Genkit
+from genkit.plugins.google_genai import GoogleGenAI
+from genkit.plugins.anthropic import Anthropic
+from genkit.plugins.ollama import Ollama
+
+ai = Genkit(
+    plugins=[
+        GoogleGenAI(),
+        Anthropic(),
+        Ollama(server_address="http://localhost:11434"),
+    ],
+)
+
+# Use Claude
+response = await ai.generate(
+    model="anthropic/claude-3-5-sonnet-20241022",
+    prompt="Hello, Claude!"
+)
+
+# Use local Ollama models
+response = await ai.generate(
+    model="ollama/llama2",
+    prompt="Hello, Llama!"
+)
+```
+
+## Development with uv
+
+For faster dependency management, use `uv`:
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create a new project
+uv init my-genkit-app
+cd my-genkit-app
+
+# Install dependencies
+uv pip install "genkit[google-genai]"
+
+# Run with uv
+uv run python app.py
+```
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Python API Reference" icon="book" href="/api/python/genkit">
+    Explore the complete Python API
+  </Card>
+  <Card title="Structured Output" icon="code" href="/guides/structured-output">
+    Generate type-safe responses with Pydantic
+  </Card>
+  <Card title="Flask Integration" icon="flask" href="/plugins/flask">
+    Deploy flows with Flask
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/deployment/python">
+    Deploy your Python applications
+  </Card>
+</CardGroup>

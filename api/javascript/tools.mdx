@@ -1,0 +1,292 @@
+---
+title: Tools API
+description: API reference for defining and using tools in Genkit (JavaScript/TypeScript)
+---
+
+Tools allow models to interact with external systems or perform specific computations during generation.
+
+## defineTool()
+
+Defines a tool that can be passed to models for automatic execution.
+
+```typescript
+import { defineTool } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const weatherTool = defineTool(
+  registry,
+  {
+    name: 'getWeather',
+    description: 'Gets the current weather for a city',
+    inputSchema: z.object({
+      city: z.string(),
+    }),
+    outputSchema: z.object({
+      temperature: z.number(),
+      conditions: z.string(),
+    }),
+  },
+  async (input) => {
+    // Tool implementation
+    return {
+      temperature: 72,
+      conditions: 'sunny',
+    };
+  }
+);
+```
+
+### Parameters
+
+<ParamField path="registry" type="Registry" required>
+  The Genkit registry instance
+</ParamField>
+
+<ParamField path="config" type="ToolConfig" required>
+  Tool configuration object
+  
+  <Expandable title="ToolConfig properties">
+    <ParamField path="name" type="string" required>
+      Unique name of the tool
+    </ParamField>
+    
+    <ParamField path="description" type="string" required>
+      Description of what the tool does (helps the model understand when to use it)
+    </ParamField>
+    
+    <ParamField path="inputSchema" type="ZodTypeAny">
+      Zod schema for input validation (mutually exclusive with inputJsonSchema)
+    </ParamField>
+    
+    <ParamField path="inputJsonSchema" type="JSONSchema7">
+      JSON schema for input (mutually exclusive with inputSchema)
+    </ParamField>
+    
+    <ParamField path="outputSchema" type="ZodTypeAny">
+      Zod schema for output validation (mutually exclusive with outputJsonSchema)
+    </ParamField>
+    
+    <ParamField path="outputJsonSchema" type="JSONSchema7">
+      JSON schema for output (mutually exclusive with outputSchema)
+    </ParamField>
+    
+    <ParamField path="metadata" type="Record<string, any>">
+      Additional metadata for the tool
+    </ParamField>
+    
+    <ParamField path="multipart" type="boolean">
+      Whether this tool returns multipart content (text + media)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="fn" type="ToolFn<I, O>">
+  Implementation function for the tool
+  
+  **Function signature:**
+  ```typescript
+  (input: z.infer<I>, ctx: ToolFnOptions & ToolRunOptions) => Promise<z.infer<O>>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="ToolAction<I, O>" type="ToolAction">
+  A tool action that can be passed to model generation requests
+</ResponseField>
+
+## tool()
+
+Defines a dynamic tool that is not registered in the Genkit registry.
+
+```typescript
+import { tool } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const dynamicTool = tool(
+  {
+    name: 'dynamicWeather',
+    description: 'Dynamic weather tool',
+    inputSchema: z.object({ city: z.string() }),
+    outputSchema: z.object({ temp: z.number() }),
+  },
+  async (input) => ({ temp: 72 })
+);
+```
+
+### Parameters
+
+Same as `defineTool()` except without the `registry` parameter.
+
+### Returns
+
+<ResponseField name="ToolAction<I, O>" type="ToolAction">
+  A dynamic tool action (not registered)
+</ResponseField>
+
+## Tool Interrupts (Beta)
+
+Tools can interrupt execution to request user confirmation or additional input.
+
+### interrupt()
+
+Creates an interrupt tool that pauses execution.
+
+```typescript
+import { interrupt } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+const confirmTool = interrupt({
+  name: 'confirmAction',
+  description: 'Requests user confirmation',
+  inputSchema: z.object({ action: z.string() }),
+  outputSchema: z.object({ confirmed: z.boolean() }),
+  requestMetadata: { requiresConfirmation: true },
+});
+```
+
+### ToolAction.respond()
+
+Responds to a tool interrupt with output data.
+
+```typescript
+const toolResponse = myTool.respond(
+  interruptRequest,
+  { result: 'success' },
+  { metadata: { userConfirmed: true } }
+);
+```
+
+**Parameters:**
+
+<ParamField path="interrupt" type="ToolRequestPart" required>
+  The interrupt tool request to respond to
+</ParamField>
+
+<ParamField path="outputData" type="z.infer<O>" required>
+  Response data matching the tool's output schema
+</ParamField>
+
+<ParamField path="options" type="object">
+  <ParamField path="metadata" type="Record<string, any>">
+    Additional metadata for the response
+  </ParamField>
+</ParamField>
+
+**Returns:** `ToolResponsePart`
+
+### ToolAction.restart()
+
+Restarts a tool request after an interrupt.
+
+```typescript
+const restartRequest = myTool.restart(
+  interruptRequest,
+  { resumed: true },
+  { replaceInput: { newParam: 'value' } }
+);
+```
+
+**Parameters:**
+
+<ParamField path="interrupt" type="ToolRequestPart" required>
+  The interrupt tool request to restart
+</ParamField>
+
+<ParamField path="resumedMetadata" type="any">
+  Metadata to pass to the tool on restart (defaults to `true`)
+</ParamField>
+
+<ParamField path="options" type="object">
+  <ParamField path="replaceInput" type="z.infer<I>">
+    New input to replace the original tool input
+  </ParamField>
+</ParamField>
+
+**Returns:** `ToolRequestPart`
+
+## Types
+
+### ToolAction
+
+```typescript
+type ToolAction<I extends z.ZodTypeAny, O extends z.ZodTypeAny> = 
+  Action<I, O, z.ZodTypeAny, ToolRunOptions> & 
+  Resumable<I, O> & {
+    __action: {
+      metadata: {
+        type: 'tool';
+      };
+    };
+  };
+```
+
+### ToolFnOptions
+
+```typescript
+interface ToolFnOptions extends ActionFnArg<never> {
+  interrupt: (metadata?: Record<string, any>) => never;
+  context: ActionContext;
+}
+```
+
+### ToolRunOptions
+
+```typescript
+interface ToolRunOptions extends ActionRunOptions<z.ZodTypeAny> {
+  resumed?: boolean | Record<string, any>;
+  metadata?: Record<string, any>;
+}
+```
+
+## Example: Complete Tool Definition
+
+```typescript
+import { ai } from './genkit';
+import { z } from 'zod';
+
+const calculatorTool = ai.defineTool(
+  {
+    name: 'calculator',
+    description: 'Performs basic arithmetic operations',
+    inputSchema: z.object({
+      operation: z.enum(['add', 'subtract', 'multiply', 'divide']),
+      a: z.number(),
+      b: z.number(),
+    }),
+    outputSchema: z.object({
+      result: z.number(),
+    }),
+  },
+  async (input, ctx) => {
+    let result: number;
+    
+    switch (input.operation) {
+      case 'add':
+        result = input.a + input.b;
+        break;
+      case 'subtract':
+        result = input.a - input.b;
+        break;
+      case 'multiply':
+        result = input.a * input.b;
+        break;
+      case 'divide':
+        if (input.b === 0) {
+          throw new Error('Division by zero');
+        }
+        result = input.a / input.b;
+        break;
+    }
+    
+    return { result };
+  }
+);
+
+// Use in generation
+const response = await ai.generate({
+  model: gemini15Flash,
+  prompt: 'What is 15 multiplied by 7?',
+  tools: [calculatorTool],
+});
+```

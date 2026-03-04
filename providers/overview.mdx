@@ -1,0 +1,192 @@
+---
+title: Model Providers Overview
+description: Choose the right AI model provider for your Genkit application
+---
+
+Genkit supports multiple AI model providers, giving you flexibility to choose the best models for your use case. Each provider offers different models, features, and pricing.
+
+## Supported Providers
+
+Genkit includes official support for the following model providers:
+
+### Google AI Providers
+
+- **[Google AI (Gemini Developer API)](/providers/google-genai)** - Quick access to Gemini models with API key authentication. Ideal for prototyping and smaller projects.
+- **[Vertex AI](/providers/vertex-ai)** - Enterprise-grade Google Cloud AI platform with advanced features, IAM integration, and broader model access including Imagen, Lyria, and Model Garden.
+
+### Third-Party Providers
+
+- **[Anthropic](/providers/anthropic)** - Access to Claude models (Haiku, Sonnet, Opus) with advanced reasoning capabilities.
+- **[OpenAI-Compatible APIs](/providers/openai-compatible)** - Support for OpenAI, xAI (Grok), DeepSeek, and any OpenAI-compatible endpoint.
+- **[Ollama](/providers/ollama)** - Run open-source models locally for privacy and offline usage.
+
+### Custom Providers
+
+- **[Custom Providers](/providers/custom-providers)** - Build your own model provider plugin to integrate any AI service.
+
+## Provider Comparison
+
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Best For</th>
+      <th>Authentication</th>
+      <th>Key Features</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Google AI</td>
+      <td>Rapid prototyping, small projects</td>
+      <td>API Key</td>
+      <td>Gemini models, image/video generation, simple setup</td>
+    </tr>
+    <tr>
+      <td>Vertex AI</td>
+      <td>Production apps, enterprise</td>
+      <td>GCP IAM / API Key (Express Mode)</td>
+      <td>Model Garden, Vector Search, fine-tuning, governance</td>
+    </tr>
+    <tr>
+      <td>Anthropic</td>
+      <td>Advanced reasoning tasks</td>
+      <td>API Key</td>
+      <td>Claude models, extended thinking, document citations</td>
+    </tr>
+    <tr>
+      <td>OpenAI</td>
+      <td>GPT models, wide adoption</td>
+      <td>API Key</td>
+      <td>GPT-4o, o1, DALL-E, Whisper, multi-modal</td>
+    </tr>
+    <tr>
+      <td>Ollama</td>
+      <td>Local development, privacy</td>
+      <td>None (local)</td>
+      <td>Open-source models, offline, no API costs</td>
+    </tr>
+  </tbody>
+</table>
+
+## How to Choose a Provider
+
+### For Prototyping
+
+**Use Google AI** if you want to get started quickly with powerful multimodal models:
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+
+const ai = genkit({
+  plugins: [googleAI()],
+});
+
+const { text } = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Explain quantum computing',
+});
+```
+
+### For Production
+
+**Use Vertex AI** for enterprise applications with advanced features:
+
+- IAM-based access control
+- Integration with other Google Cloud services
+- Model versioning and governance
+- Access to Model Garden (Anthropic, Meta, and more)
+- Vector Search for RAG applications
+
+### For Advanced Reasoning
+
+**Use Anthropic** when you need:
+
+- Extended thinking for complex problem-solving
+- Document citations for factual accuracy
+- Long context windows (200K+ tokens)
+- Prompt caching for efficiency
+
+### For Local Development
+
+**Use Ollama** when you need:
+
+- Privacy (data never leaves your machine)
+- Offline capabilities
+- No API costs
+- Experimentation with open-source models
+
+### For OpenAI Compatibility
+
+**Use OpenAI-Compatible plugin** to connect to:
+
+- OpenAI (GPT-4o, o1, etc.)
+- xAI (Grok models)
+- DeepSeek
+- Any service with an OpenAI-compatible API
+
+## Installation
+
+Install the provider plugin you need:
+
+```bash
+# Google AI
+npm install @genkit-ai/google-genai
+
+# Anthropic
+npm install @genkit-ai/anthropic
+
+# OpenAI-compatible
+npm install @genkit-ai/compat-oai
+
+# Ollama
+npm install genkitx-ollama
+```
+
+## Using Multiple Providers
+
+You can configure multiple providers in a single Genkit application:
+
+```typescript
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { anthropic } from '@genkit-ai/anthropic';
+import { ollama } from 'genkitx-ollama';
+
+const ai = genkit({
+  plugins: [
+    googleAI(),
+    anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+    ollama({
+      models: [{ name: 'llama3' }],
+      serverAddress: 'http://localhost:11434',
+    }),
+  ],
+});
+
+// Use different models for different tasks
+const summary = await ai.generate({
+  model: googleAI.model('gemini-2.5-flash'),
+  prompt: 'Summarize this text...',
+});
+
+const analysis = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Analyze this data...',
+});
+
+const local = await ai.generate({
+  model: ollama.model('llama3'),
+  prompt: 'Generate a response...',
+});
+```
+
+## Next Steps
+
+- [Set up Google AI provider](/providers/google-genai)
+- [Set up Vertex AI](/providers/vertex-ai)
+- [Set up Anthropic](/providers/anthropic)
+- [Configure OpenAI-compatible APIs](/providers/openai-compatible)
+- [Run local models with Ollama](/providers/ollama)
+- [Build a custom provider](/providers/custom-providers)

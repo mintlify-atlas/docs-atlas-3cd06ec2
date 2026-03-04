@@ -1,0 +1,278 @@
+---
+title: Deployment Overview
+description: Learn how to deploy Genkit AI applications to production
+---
+
+# Deployment Overview
+
+Genkit flows are just functions that can be deployed anywhere you can run JavaScript, Go, or Python code. This guide covers the most common deployment patterns and platforms.
+
+## Deployment Options
+
+Genkit applications can be deployed to:
+
+| Platform | Best For | Language Support |
+|----------|----------|------------------|
+| **Firebase Functions** | Firebase ecosystem integration, managed scaling | JavaScript/TypeScript |
+| **Google Cloud Run** | Containerized deployments, auto-scaling | All (JS, Go, Python) |
+| **Node.js Platforms** | Traditional Node.js hosting (Vercel, Fly.io, AWS) | JavaScript/TypeScript |
+| **Go Deployments** | High-performance standalone servers | Go |
+| **Python Deployments** | Flask/FastAPI integration, ASGI servers | Python |
+
+## Architecture Patterns
+
+### 1. Serverless Functions
+
+Deploy individual flows as serverless functions that scale automatically:
+
+```
+┌─────────────────────────────────────────────┐
+│  Client Application                         │
+└─────────────┬───────────────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│  Cloud Functions / Cloud Run                │
+│  ┌─────────────┐  ┌─────────────┐          │
+│  │  Flow 1     │  │  Flow 2     │          │
+│  │  (endpoint) │  │  (endpoint) │          │
+│  └─────────────┘  └─────────────┘          │
+└─────────────────────────────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│  AI Models (Gemini, Claude, etc.)           │
+└─────────────────────────────────────────────┘
+```
+
+**Pros:**
+- Automatic scaling
+- Pay-per-use pricing
+- No server management
+
+**Cons:**
+- Cold start latency
+- Runtime limitations (timeouts, memory)
+
+### 2. Containerized Services
+
+Package your entire application in a container for flexible deployment:
+
+```
+┌─────────────────────────────────────────────┐
+│  Docker Container                           │
+│  ┌───────────────────────────────────────┐  │
+│  │  Express/Flask/Go Server              │  │
+│  │  ┌──────┐ ┌──────┐ ┌──────┐          │  │
+│  │  │Flow 1│ │Flow 2│ │Flow 3│          │  │
+│  │  └──────┘ └──────┘ └──────┘          │  │
+│  └───────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+**Pros:**
+- Consistent environments
+- Full control over runtime
+- Can run anywhere (GCP, AWS, Kubernetes)
+
+**Cons:**
+- More configuration required
+- Infrastructure management
+
+### 3. Standalone Servers
+
+Deploy a traditional HTTP server with all flows exposed as endpoints:
+
+```go
+// Go example
+mux := http.NewServeMux()
+for _, flow := range genkit.ListFlows(g) {
+    mux.HandleFunc("POST /"+flow.Name(), genkit.Handler(flow))
+}
+log.Fatal(http.ListenAndServe(":8080", mux))
+```
+
+## Choosing a Platform
+
+### Use Firebase Functions When:
+
+- You're already using Firebase (Auth, Firestore, etc.)
+- You want managed infrastructure
+- You need automatic scaling
+- You're building with JavaScript/TypeScript
+
+### Use Cloud Run When:
+
+- You need containerized deployments
+- You want language flexibility (Go, Python, Node.js)
+- You need more control than Functions
+- You want pay-per-use serverless scaling
+
+### Use Node.js Platforms When:
+
+- You're deploying to Vercel, Fly.io, or AWS
+- You need Express.js integration
+- You want full control over the server
+
+### Use Go Servers When:
+
+- You need maximum performance
+- You want minimal resource usage
+- You're building high-throughput services
+
+### Use Python (Flask/FastAPI) When:
+
+- You're integrating with Python ML pipelines
+- You prefer Flask or FastAPI
+- You need ASGI server features
+
+## General Best Practices
+
+### 1. Environment Variables
+
+Store API keys and secrets in environment variables, never in code:
+
+<CodeGroup>
+```javascript Node.js
+// Don't hardcode
+const ai = genkit({
+  plugins: [googleAI({ apiKey: 'sk-...' })] // ❌ Never do this
+});
+
+// Use environment variables
+const ai = genkit({
+  plugins: [googleAI()] // ✅ Reads GEMINI_API_KEY from env
+});
+```
+
+```go Go
+// Config reads from environment variables
+g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+// Reads GEMINI_API_KEY or GOOGLE_API_KEY
+```
+
+```python Python
+ai = Genkit(
+    plugins=[GoogleAI()],  # Reads GEMINI_API_KEY from env
+    model='googleai/gemini-2.0-flash',
+)
+```
+</CodeGroup>
+
+### 2. Health Checks
+
+Add health check endpoints for load balancers:
+
+<CodeGroup>
+```javascript Express
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
+```
+
+```go Go
+mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status":"healthy"}`))
+})
+```
+
+```python FastAPI
+@app.get('/health')
+async def health():
+    return {'status': 'healthy'}
+```
+</CodeGroup>
+
+### 3. Timeouts and Resource Limits
+
+Configure appropriate timeouts for AI operations:
+
+```javascript
+// For Cloud Functions
+export const myFlow = onCallGenkit(
+  {
+    timeoutSeconds: 540, // 9 minutes for long-running AI tasks
+    memory: '1GiB',
+  },
+  flowDefinition
+);
+```
+
+### 4. Error Handling
+
+Implement proper error handling for production:
+
+```javascript
+const myFlow = ai.defineFlow(
+  { name: 'myFlow' },
+  async (input) => {
+    try {
+      return await ai.generate({ prompt: input });
+    } catch (error) {
+      console.error('Generation failed:', error);
+      throw new UserFacingError('INTERNAL', 'Failed to generate response');
+    }
+  }
+);
+```
+
+### 5. Monitoring and Observability
+
+Enable telemetry for production monitoring:
+
+<CodeGroup>
+```javascript Firebase
+import { enableFirebaseTelemetry } from '@genkit-ai/firebase';
+
+enableFirebaseTelemetry();
+```
+
+```python Python
+from genkit.plugins.google_cloud import GoogleCloud
+
+ai = Genkit(
+    plugins=[
+        GoogleAI(),
+        GoogleCloud(project_id='your-project'),  # Exports to Cloud Trace
+    ],
+)
+```
+</CodeGroup>
+
+### 6. Authentication
+
+Secure your endpoints with authentication:
+
+```javascript
+import { withContextProvider } from '@genkit-ai/express';
+
+function requireAuth(req) {
+  const token = req.headers['authorization'];
+  if (!isValid(token)) {
+    throw new UserFacingError('UNAUTHENTICATED', 'Invalid token');
+  }
+  return { user: decodeToken(token) };
+}
+
+app.post('/flow', expressHandler(myFlow, { 
+  contextProvider: requireAuth 
+}));
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Firebase Deployment" icon="fire" href="/deployment/firebase">
+    Deploy to Cloud Functions for Firebase
+  </Card>
+  <Card title="Cloud Run Deployment" icon="docker" href="/deployment/cloud-run">
+    Containerize and deploy to Google Cloud Run
+  </Card>
+  <Card title="Node.js Deployment" icon="node-js" href="/deployment/nodejs">
+    Deploy Express apps to any Node.js platform
+  </Card>
+  <Card title="Go Deployment" icon="golang" href="/deployment/go">
+    Build and deploy Go HTTP servers
+  </Card>
+</CardGroup>

@@ -1,0 +1,551 @@
+---
+title: Chat Interfaces
+description: Build conversational AI applications with message history and session management
+---
+
+# Chat Interfaces
+
+Chat interfaces enable multi-turn conversations where the AI maintains context across messages. Genkit provides tools for managing conversation history and building stateful chat applications.
+
+## Basic Chat Flow
+
+Create a simple chat flow that maintains message history:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import type { MessageData } from '@genkit-ai/ai/model';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+const ChatInputSchema = z.object({
+  sessionId: z.string(),
+  question: z.string(),
+});
+
+const ChatOutputSchema = z.object({
+  sessionId: z.string(),
+  history: z.array(MessageSchema),
+});
+
+// Simple in-memory storage for chat history
+class ChatHistoryStore {
+  private sessions: Map<string, MessageData[]> = new Map();
+  
+  write(sessionId: string, history: MessageData[]) {
+    this.sessions.set(sessionId, history);
+  }
+  
+  read(sessionId: string): MessageData[] {
+    return this.sessions.get(sessionId) || [];
+  }
+}
+
+const chatStore = new ChatHistoryStore();
+
+const chatFlow = ai.defineFlow(
+  {
+    name: 'multiTurnChat',
+    inputSchema: ChatInputSchema,
+    outputSchema: ChatOutputSchema,
+  },
+  async (input) => {
+    // Fetch chat history
+    let history = await ai.run('fetchHistory', async () =>
+      chatStore.read(input.sessionId)
+    );
+
+    // Generate response
+    const llmResponse = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      messages: history,
+      prompt: { text: input.question },
+    });
+
+    // Save updated history
+    history = llmResponse.messages;
+    chatStore.write(input.sessionId, history);
+    
+    return {
+      sessionId: input.sessionId,
+      history: history,
+    };
+  }
+);
+```
+
+```go Go
+import (
+    "github.com/firebase/genkit/go/ai"
+    "github.com/firebase/genkit/go/genkit"
+)
+
+type ChatMessage struct {
+    Role    string `json:"role"`
+    Content string `json:"content"`
+}
+
+type ChatHistory struct {
+    SessionID string         `json:"sessionId"`
+    Messages  []*ChatMessage `json:"messages"`
+}
+
+// Simple in-memory storage
+var chatSessions = make(map[string][]*ai.Message)
+
+chatFlow := genkit.DefineFlow(g, "chat",
+    func(ctx context.Context, input ChatInput) (*ChatHistory, error) {
+        // Get existing messages for this session
+        history := chatSessions[input.SessionID]
+        
+        // Add user message
+        userMsg := ai.NewUserTextMessage(input.Question)
+        history = append(history, userMsg)
+        
+        // Generate response
+        resp, err := genkit.Generate(ctx, g,
+            ai.WithModelName("googleai/gemini-2.5-flash"),
+            ai.WithMessages(history...),
+        )
+        if err != nil {
+            return nil, err
+        }
+        
+        // Save updated history
+        chatSessions[input.SessionID] = resp.Messages()
+        
+        return &ChatHistory{
+            SessionID: input.SessionID,
+            Messages:  convertMessages(resp.Messages()),
+        }, nil
+    },
+)
+```
+
+</CodeGroup>
+
+## Message History Management
+
+### In-Memory Storage (Development)
+
+Simple storage for development and testing:
+
+<CodeGroup>
+
+```typescript TypeScript
+export class ChatHistoryStore {
+  private preamble: MessageData[];
+  private sessions: Map<string, MessageData[]> = new Map();
+
+  constructor(preamble: MessageData[] = []) {
+    this.preamble = preamble;
+  }
+
+  write(sessionId: string, history: MessageData[]) {
+    this.sessions.set(sessionId, history);
+  }
+
+  read(sessionId: string): MessageData[] {
+    return this.sessions.get(sessionId) || this.preamble;
+  }
+}
+```
+
+</CodeGroup>
+
+### Database Storage (Production)
+
+For production, use a database like Firestore:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { getFirestore } from 'firebase-admin/firestore';
+
+class FirestoreChatStore {
+  private db = getFirestore();
+  
+  async write(sessionId: string, history: MessageData[]) {
+    await this.db.collection('chat_sessions').doc(sessionId).set({
+      history,
+      updatedAt: new Date(),
+    });
+  }
+  
+  async read(sessionId: string): Promise<MessageData[]> {
+    const doc = await this.db.collection('chat_sessions').doc(sessionId).get();
+    return doc.exists ? doc.data()?.history || [] : [];
+  }
+}
+```
+
+</CodeGroup>
+
+## System Prompts and Preambles
+
+Seed conversations with context and personality:
+
+<CodeGroup>
+
+```typescript TypeScript
+const menuData = loadMenuFromDatabase();
+
+const preamble: MessageData[] = [
+  {
+    role: 'user',
+    content: [{ text: "Hi. What's on the menu today?" }],
+  },
+  {
+    role: 'model',
+    content: [
+      {
+        text:
+          'I am Walt, a helpful AI assistant here at the restaurant.\n' +
+          'I can answer questions about the food on the menu.\n' +
+          "Here is today's menu:\n" +
+          menuData.map(item => `- ${item.title} ${item.price}\n${item.description}`).join('\n') +
+          'Do you have any questions about the menu?',
+      },
+    ],
+  },
+];
+
+const chatStore = new ChatHistoryStore(preamble);
+```
+
+</CodeGroup>
+
+## Session Management
+
+Genkit provides experimental session support for typed state across requests:
+
+<CodeGroup>
+
+```go Go
+import "github.com/firebase/genkit/go/core/x/session"
+
+type CartState struct {
+    Items []string `json:"items"`
+}
+
+store := session.NewInMemoryStore[CartState]()
+
+genkit.DefineFlow(g, "manageCart", 
+    func(ctx context.Context, input string) (string, error) {
+        // Load or create session
+        sess, err := session.Load(ctx, store, "session-id")
+        if err != nil {
+            sess, _ = session.New(ctx,
+                session.WithID[CartState]("session-id"),
+                session.WithStore(store),
+                session.WithInitialState(CartState{}),
+            )
+        }
+        ctx = session.NewContext(ctx, sess)
+
+        // Tools can access session state via session.FromContext[CartState](ctx)
+        return genkit.GenerateText(ctx, g, 
+            ai.WithPrompt(input), 
+            ai.WithTools(cartTools...))
+    })
+```
+
+</CodeGroup>
+
+See the [session sample](https://github.com/firebase/genkit/tree/main/go/samples/session) for a complete example.
+
+## Streaming Chat Responses
+
+Stream chat responses in real-time:
+
+<CodeGroup>
+
+```typescript TypeScript
+const streamingChatFlow = ai.defineStreamingFlow(
+  {
+    name: 'streamingChat',
+    inputSchema: ChatInputSchema,
+    outputSchema: ChatOutputSchema,
+  },
+  async (input, { streamingCallback }) => {
+    const history = chatStore.read(input.sessionId);
+
+    const { messages, stream } = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      messages: history,
+      prompt: { text: input.question },
+      streamingCallback,
+    });
+
+    chatStore.write(input.sessionId, messages);
+    
+    return {
+      sessionId: input.sessionId,
+      history: messages,
+    };
+  }
+);
+```
+
+</CodeGroup>
+
+## Context Window Management
+
+Manage conversation length to stay within model limits:
+
+<CodeGroup>
+
+```typescript TypeScript
+function truncateHistory(
+  history: MessageData[], 
+  maxMessages: number = 20
+): MessageData[] {
+  // Keep system message and last N messages
+  const systemMessages = history.filter(m => m.role === 'system');
+  const recentMessages = history
+    .filter(m => m.role !== 'system')
+    .slice(-maxMessages);
+  
+  return [...systemMessages, ...recentMessages];
+}
+
+const chatFlow = ai.defineFlow(
+  { name: 'chat', inputSchema: ChatInputSchema },
+  async (input) => {
+    let history = chatStore.read(input.sessionId);
+    
+    // Truncate to prevent exceeding context window
+    history = truncateHistory(history, 20);
+    
+    const llmResponse = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      messages: history,
+      prompt: { text: input.question },
+    });
+    
+    chatStore.write(input.sessionId, llmResponse.messages);
+    return llmResponse.messages;
+  }
+);
+```
+
+</CodeGroup>
+
+## Conversation Summarization
+
+Summarize old messages to save context:
+
+<CodeGroup>
+
+```typescript TypeScript
+async function summarizeHistory(
+  history: MessageData[]
+): Promise<MessageData[]> {
+  if (history.length < 10) return history;
+  
+  // Summarize older messages
+  const oldMessages = history.slice(0, -5);
+  const recentMessages = history.slice(-5);
+  
+  const summary = await ai.generate({
+    model: googleAI.model('gemini-2.5-flash'),
+    prompt: `Summarize this conversation concisely:\n${JSON.stringify(oldMessages)}`,
+  });
+  
+  return [
+    { role: 'system', content: [{ text: `Previous conversation summary: ${summary.text}` }] },
+    ...recentMessages,
+  ];
+}
+```
+
+</CodeGroup>
+
+## Multi-User Chat
+
+Handle multiple concurrent users:
+
+<CodeGroup>
+
+```typescript TypeScript
+class MultiUserChatStore {
+  private sessions: Map<string, Map<string, MessageData[]>> = new Map();
+  
+  write(userId: string, sessionId: string, history: MessageData[]) {
+    if (!this.sessions.has(userId)) {
+      this.sessions.set(userId, new Map());
+    }
+    this.sessions.get(userId)!.set(sessionId, history);
+  }
+  
+  read(userId: string, sessionId: string): MessageData[] {
+    return this.sessions.get(userId)?.get(sessionId) || [];
+  }
+  
+  listSessions(userId: string): string[] {
+    return Array.from(this.sessions.get(userId)?.keys() || []);
+  }
+}
+```
+
+</CodeGroup>
+
+## Best Practices
+
+### Generate Unique Session IDs
+
+Use UUIDs or similar for session identification:
+
+```typescript TypeScript
+import { v4 as uuidv4 } from 'uuid';
+
+const sessionId = uuidv4();
+```
+
+### Set Clear System Instructions
+
+Define the assistant's role and boundaries:
+
+```typescript TypeScript
+const systemMessage = {
+  role: 'system',
+  content: [{
+    text: 'You are a helpful restaurant assistant. Only answer questions about the menu. For other topics, politely redirect to menu-related questions.'
+  }]
+};
+```
+
+### Implement Session Timeouts
+
+Clear old sessions to save storage:
+
+```typescript TypeScript
+class ChatStoreWithTTL {
+  private sessions: Map<string, { history: MessageData[], lastAccess: Date }> = new Map();
+  private ttlMinutes = 60;
+  
+  write(sessionId: string, history: MessageData[]) {
+    this.sessions.set(sessionId, {
+      history,
+      lastAccess: new Date(),
+    });
+    this.cleanupOldSessions();
+  }
+  
+  private cleanupOldSessions() {
+    const now = new Date();
+    for (const [id, session] of this.sessions.entries()) {
+      const age = (now.getTime() - session.lastAccess.getTime()) / 1000 / 60;
+      if (age > this.ttlMinutes) {
+        this.sessions.delete(id);
+      }
+    }
+  }
+}
+```
+
+### Handle Message Validation
+
+Validate and sanitize user inputs:
+
+```typescript TypeScript
+function validateMessage(message: string): string {
+  // Remove excessive whitespace
+  message = message.trim().replace(/\s+/g, ' ');
+  
+  // Check length
+  if (message.length === 0) {
+    throw new Error('Message cannot be empty');
+  }
+  if (message.length > 4000) {
+    throw new Error('Message too long');
+  }
+  
+  return message;
+}
+```
+
+## Complete Chat Application Example
+
+<CodeGroup>
+
+```typescript TypeScript
+import { genkit, z } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import type { MessageData } from '@genkit-ai/ai/model';
+
+const ai = genkit({ plugins: [googleAI()] });
+
+// Load menu data
+const menuData = require('./menu.json');
+
+// System preamble
+const preamble: MessageData[] = [
+  {
+    role: 'user',
+    content: [{ text: "Hi. What's on the menu?" }],
+  },
+  {
+    role: 'model',
+    content: [
+      {
+        text:
+          'I am Walt, a helpful AI assistant at the restaurant.\n' +
+          'I can answer questions about our menu.\n' +
+          "Here's what we have today:\n" +
+          menuData.map(r => `- ${r.title} ${r.price}\n${r.description}`).join('\n'),
+      },
+    ],
+  },
+];
+
+const chatStore = new ChatHistoryStore(preamble);
+
+const chatFlow = ai.defineFlow(
+  {
+    name: 'restaurantChat',
+    inputSchema: z.object({
+      sessionId: z.string(),
+      question: z.string(),
+    }),
+    outputSchema: z.object({
+      sessionId: z.string(),
+      history: z.array(MessageSchema),
+    }),
+  },
+  async (input) => {
+    // Fetch history
+    let history = await ai.run('fetchHistory', async () =>
+      chatStore.read(input.sessionId)
+    );
+
+    // Generate response
+    const llmResponse = await ai.generate({
+      model: googleAI.model('gemini-2.5-flash'),
+      messages: history,
+      prompt: { text: input.question },
+    });
+
+    // Save history
+    history = llmResponse.messages;
+    chatStore.write(input.sessionId, history);
+    
+    return {
+      sessionId: input.sessionId,
+      history: history,
+    };
+  }
+);
+
+export { chatFlow };
+```
+
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [Tool Calling](/guides/tool-calling) to add capabilities
+- Explore [Streaming](/guides/streaming) for real-time responses
+- Check out [Evaluation](/guides/evaluation) to test chat quality

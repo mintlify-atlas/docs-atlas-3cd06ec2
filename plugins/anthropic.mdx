@@ -1,0 +1,356 @@
+---
+title: 'Anthropic Plugin'
+description: 'Use Claude models from Anthropic with Genkit'
+---
+
+# Anthropic Plugin
+
+The `@genkit-ai/anthropic` plugin provides access to Anthropic's Claude models, including the latest Claude 4.5 series (Haiku, Sonnet, Opus). This plugin is now officially maintained by Google and supersedes the earlier community package `genkitx-anthropic`.
+
+## Installation
+
+```bash
+npm install @genkit-ai/anthropic
+```
+
+Or with other package managers:
+
+```bash
+yarn add @genkit-ai/anthropic
+pnpm add @genkit-ai/anthropic
+```
+
+## Supported Models
+
+The plugin supports the most recent Anthropic models:
+
+- **Claude Haiku 4.5** (`claude-haiku-4-5`) - Fast, cost-effective
+- **Claude Sonnet 4.5** (`claude-sonnet-4-5`) - Balanced performance
+- **Claude Opus 4.5** (`claude-opus-4-5`) - Most capable
+
+Plus all [non-retired older models](https://platform.claude.com/docs/en/about-claude/model-deprecations#model-status) including Claude 3.5 and 3.0 series.
+
+## Basic Setup
+
+### Initialize the Plugin
+
+```typescript
+import { genkit } from 'genkit';
+import { anthropic } from '@genkit-ai/anthropic';
+
+const ai = genkit({
+  plugins: [anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })],
+  model: anthropic.model('claude-sonnet-4-5'), // Optional default
+});
+```
+
+### Simple Text Generation
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-haiku-4-5'),
+  prompt: 'Tell me a joke.',
+});
+
+console.log(response.text);
+```
+
+## Features
+
+### Multi-modal Prompts
+
+Claude supports text and image inputs:
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: [
+    { text: 'What animal is in the photo?' },
+    { media: { url: imageUrl } },
+  ],
+});
+
+console.log(response.text);
+```
+
+### Extended Thinking
+
+Claude 4.5 models can expose their internal reasoning process:
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Walk me through your reasoning for Fermat\'s little theorem.',
+  config: {
+    thinking: {
+      enabled: true,
+      budgetTokens: 4096, // Must be >= 1024 and less than max_tokens
+    },
+  },
+});
+
+console.log(response.text);      // Final answer
+console.log(response.reasoning); // Thinking steps
+```
+
+When thinking is enabled:
+- Request bodies include the `thinking` payload
+- Streamed responses deliver `reasoning` parts incrementally
+- You can render the chain-of-thought as it arrives
+
+### Document Citations
+
+Claude can cite specific parts of documents, making it easy to trace information sources. Use the `anthropicDocument()` helper:
+
+```typescript
+import { anthropic, anthropicDocument } from '@genkit-ai/anthropic';
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  messages: [
+    {
+      role: 'user',
+      content: [
+        anthropicDocument({
+          source: {
+            type: 'text',
+            data: 'The grass is green. The sky is blue. Water is wet.',
+          },
+          title: 'Basic Facts',
+          citations: { enabled: true },
+        }),
+        { text: 'What color is the grass? Cite your source.' },
+      ],
+    },
+  ],
+});
+
+// Access citations from response parts
+const citations = response.message?.content?.flatMap(
+  (part) => part.metadata?.citations || [],
+) ?? [];
+
+console.log('Citations:', citations);
+```
+
+**Important:** Citations must be enabled on all documents in a request, or on none. You cannot mix cited and non-cited documents.
+
+**Supported document source types:**
+- `text` - Plain text (returns `char_location` citations)
+- `base64` - Base64-encoded PDFs (returns `page_location` citations)
+- `url` - PDFs via URL (returns `page_location` citations)
+- `content` - Custom content blocks (returns `content_block_location` citations)
+- `file` - Anthropic Files API references, beta only (returns `page_location` citations)
+
+### Prompt Caching
+
+Cache prompts to reduce costs and latency for repeated requests:
+
+```typescript
+import { anthropic, cacheControl } from '@genkit-ai/anthropic';
+
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  system: {
+    text: longSystemPrompt,
+    metadata: { ...cacheControl() }, // Default: ephemeral
+  },
+  messages: [
+    {
+      role: 'user',
+      content: [{ text: 'What is the main idea of the text?' }],
+    },
+  ],
+});
+```
+
+**Cache control options:**
+
+```typescript
+// Default ephemeral cache
+metadata: { ...cacheControl() }
+
+// Explicit TTL
+metadata: { ...cacheControl({ ttl: '1h' }) }
+
+// Using the type directly
+import { type AnthropicCacheControl } from '@genkit-ai/anthropic';
+metadata: { 
+  cache_control: { 
+    type: 'ephemeral', 
+    ttl: '5m' 
+  } as AnthropicCacheControl 
+}
+```
+
+**Note:** Caching only activates when prompts exceed a minimum token length. See [Anthropic API documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) for details.
+
+## Using in Flows
+
+```typescript
+import { z } from 'genkit';
+
+const jokeFlow = ai.defineFlow(
+  {
+    name: 'jokeFlow',
+    inputSchema: z.string(),
+    outputSchema: z.string(),
+  },
+  async (subject) => {
+    const llmResponse = await ai.generate({
+      model: anthropic.model('claude-haiku-4-5'),
+      prompt: `Tell me a joke about ${subject}`,
+    });
+    return llmResponse.text;
+  }
+);
+
+// Use the flow
+const joke = await jokeFlow('programming');
+console.log(joke);
+```
+
+## Direct Model Usage (Plugin API v2)
+
+The plugin supports using models directly without initializing the full Genkit framework:
+
+```typescript
+import { anthropic } from '@genkit-ai/anthropic';
+
+// Create a model reference directly
+const claude = anthropic.model('claude-sonnet-4-5');
+
+// Use the model directly
+const response = await claude({
+  messages: [
+    {
+      role: 'user',
+      content: [{ text: 'Tell me a joke.' }],
+    },
+  ],
+});
+
+console.log(response);
+```
+
+**Multiple model references:**
+
+```typescript
+import { anthropic } from '@genkit-ai/anthropic';
+
+const claudeHaiku45 = anthropic.model('claude-haiku-4-5');
+const claudeSonnet45 = anthropic.model('claude-sonnet-4-5');
+const claudeOpus45 = anthropic.model('claude-opus-4-5');
+
+const response = await claudeSonnet45({
+  messages: [
+    {
+      role: 'user',
+      content: [{ text: 'Hello!' }],
+    },
+  ],
+});
+```
+
+This approach is useful for:
+- Framework developers needing raw model access
+- Testing models in isolation
+- Using Genkit models in non-Genkit applications
+
+## Beta API Limitations
+
+The beta API provides access to experimental features, but some server-managed tool blocks are not yet supported:
+
+**Not supported:**
+- `web_fetch_tool_result`
+- `code_execution_tool_result`
+- `bash_code_execution_tool_result`
+- `text_editor_code_execution_tool_result`
+- `mcp_tool_result`
+- `mcp_tool_use`
+- `container_upload`
+
+**Supported:**
+- `server_tool_use` ✅
+- `web_search_tool_result` ✅
+
+These work with both stable and beta APIs.
+
+## Configuration Options
+
+### Plugin Options
+
+```typescript
+anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,  // Required
+  apiVersion: '2023-06-01',               // Optional, API version
+})
+```
+
+### Model Config
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Your prompt',
+  config: {
+    temperature: 0.7,              // Randomness (0.0-1.0)
+    maxOutputTokens: 2048,         // Max response length
+    topP: 0.9,                     // Nucleus sampling
+    topK: 40,                      // Top-K sampling
+    stopSequences: ['END'],        // Stop sequences
+    thinking: {                    // Extended thinking
+      enabled: true,
+      budgetTokens: 4096,
+    },
+  },
+});
+```
+
+## Best Practices
+
+### Model Selection
+
+- **Claude Haiku 4.5** - Use for fast, cost-effective tasks
+- **Claude Sonnet 4.5** - Best for most production use cases
+- **Claude Opus 4.5** - Use for complex reasoning and research
+
+### Error Handling
+
+```typescript
+try {
+  const response = await ai.generate({
+    model: anthropic.model('claude-sonnet-4-5'),
+    prompt: 'Your prompt',
+  });
+  console.log(response.text);
+} catch (error) {
+  console.error('Anthropic API error:', error);
+  // Handle rate limits, invalid requests, etc.
+}
+```
+
+### Streaming Responses
+
+```typescript
+const response = await ai.generate({
+  model: anthropic.model('claude-sonnet-4-5'),
+  prompt: 'Write a long story',
+  stream: true,
+  onChunk: (chunk) => {
+    console.log('Chunk:', chunk.text);
+  },
+});
+```
+
+## Acknowledgements
+
+This plugin builds on community work published as [`genkitx-anthropic`](https://github.com/BloomLabsInc/genkit-plugins/blob/main/plugins/anthropic/README.md) by Bloom Labs Inc. Their Apache 2.0-licensed implementation provided the foundation for this maintained package.
+
+## Links
+
+- [Anthropic API Documentation](https://platform.claude.com/docs)
+- [Model Deprecations](https://platform.claude.com/docs/en/about-claude/model-deprecations)
+- [Prompt Caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Citations Documentation](https://platform.claude.com/docs/en/build-with-claude/citations)
+- [Source Code](https://github.com/firebase/genkit/tree/main/js/plugins/anthropic)

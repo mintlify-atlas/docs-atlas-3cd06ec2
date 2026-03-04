@@ -1,0 +1,130 @@
+---
+title: Tools API
+description: Tools API reference (Python)
+---
+
+Tools allow models to call functions during generation.
+
+## @ai.tool() Decorator
+
+Defines a tool.
+
+```python
+@ai.tool()
+async def get_weather(city: str) -> dict:
+    """Gets the current weather for a city.
+    
+    Args:
+        city: The name of the city
+        
+    Returns:
+        Weather information including temperature and conditions
+    """
+    # Tool implementation
+    return {
+        "temperature": 72,
+        "conditions": "sunny",
+        "humidity": 45,
+    }
+```
+
+### Parameters
+
+<ParamField path="name" type="str | None">
+  Tool name (defaults to function name)
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Tool description (defaults to function docstring)
+</ParamField>
+
+## Using Tools
+
+```python
+# Use by name
+response = await ai.generate(
+    prompt="What's the weather in Paris?",
+    tools=["get_weather"],
+)
+```
+
+## Tool Context
+
+```python
+from genkit import ToolRunContext
+
+@ai.tool()
+async def my_tool(city: str, context: ToolRunContext) -> dict:
+    """Tool with access to context."""
+    # Access context information
+    print(f"Trace ID: {context.trace_id}")
+    return {"result": "data"}
+```
+
+## Tool Response
+
+```python
+from genkit import tool_response
+
+# Create a tool response part
+response_part = tool_response(
+    name="get_weather",
+    output={"temperature": 72},
+)
+```
+
+## Example: Complete Tool
+
+```python
+import asyncio
+from genkit import Genkit
+from pydantic import BaseModel
+
+ai = Genkit()
+
+class WeatherInput(BaseModel):
+    """Weather query input."""
+    city: str
+    units: str = "fahrenheit"
+
+class WeatherOutput(BaseModel):
+    """Weather information."""
+    temperature: int
+    conditions: str
+    city: str
+
+@ai.tool()
+async def get_weather(input: WeatherInput) -> WeatherOutput:
+    """Gets current weather for a city.
+    
+    Args:
+        input: Weather query with city and units
+        
+    Returns:
+        Current weather information
+    """
+    # In real implementation, call weather API
+    return WeatherOutput(
+        temperature=72,
+        conditions="sunny",
+        city=input.city,
+    )
+
+@ai.flow()
+async def weather_assistant(query: str) -> str:
+    """Weather assistant with tool access."""
+    response = await ai.generate(
+        prompt=query,
+        tools=["get_weather"],
+    )
+    return response.text
+
+async def main():
+    result = await weather_assistant(
+        "What's the weather like in San Francisco?"
+    )
+    print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```

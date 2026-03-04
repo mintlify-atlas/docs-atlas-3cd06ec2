@@ -1,0 +1,352 @@
+---
+title: Models API
+description: Model generation and streaming APIs
+---
+
+# Models API
+
+The Models API provides functions for interacting with generative AI models.
+
+## generate()
+
+Generate calls a generative model based on the provided prompt and configuration.
+
+**Signature:**
+
+```typescript
+generate<O extends z.ZodTypeAny = z.ZodTypeAny, CustomOptions extends z.ZodTypeAny = typeof GenerationCommonConfigSchema>(
+  registry: Registry,
+  options: GenerateOptions<O, CustomOptions> | PromiseLike<GenerateOptions<O, CustomOptions>>
+): Promise<GenerateResponse<z.infer<O>>>
+```
+
+### Parameters
+
+<ParamField path="options" type="GenerateOptions" required>
+  Generation options
+
+  <Expandable title="properties">
+    <ParamField path="model" type="ModelArgument" optional>
+      The model to use (name string or ModelAction). If not provided, uses the default model.
+    </ParamField>
+
+    <ParamField path="prompt" type="string | Part[]" optional>
+      User prompt - can be text or multipart content
+    </ParamField>
+
+    <ParamField path="system" type="string | Part[]" optional>
+      System instructions for the model
+    </ParamField>
+
+    <ParamField path="messages" type="MessageData[]" optional>
+      Conversation history for multi-turn interactions
+    </ParamField>
+
+    <ParamField path="tools" type="ToolAction[]" optional>
+      Tools the model can call. Model will automatically invoke tools unless `returnToolRequests` is true.
+    </ParamField>
+
+    <ParamField path="returnToolRequests" type="boolean" optional default="false">
+      If true, return tool requests without executing them
+    </ParamField>
+
+    <ParamField path="config" type="GenerationCommonConfig" optional>
+      Model configuration including:
+      - `temperature`: Number (0-2) - Sampling temperature
+      - `maxOutputTokens`: Maximum tokens to generate
+      - `topK`: Top-K sampling parameter
+      - `topP`: Top-P (nucleus) sampling parameter
+      - `stopSequences`: Array of sequences that stop generation
+    </ParamField>
+
+    <ParamField path="output" type="object" optional>
+      Output schema specification
+      - `schema`: Zod schema for structured output
+      - `format`: Output format (e.g., 'json', 'text')
+    </ParamField>
+
+    <ParamField path="docs" type="Document[]" optional>
+      Documents for retrieval-augmented generation (RAG)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="GenerateResponse<O>">
+  Generation response object
+
+  <Expandable title="properties">
+    <ResponseField name="text" type="string">
+      The generated text content
+    </ResponseField>
+
+    <ResponseField name="output()" type="() => z.infer<O>">
+      Parses and returns structured output according to the schema
+    </ResponseField>
+
+    <ResponseField name="messages" type="MessageData[]">
+      Complete conversation including user prompts, model responses, and tool calls
+    </ResponseField>
+
+    <ResponseField name="usage" type="GenerationUsage">
+      Token usage statistics:
+      - `inputTokens`: Number of input tokens
+      - `outputTokens`: Number of generated tokens
+      - `totalTokens`: Total tokens used
+    </ResponseField>
+
+    <ResponseField name="finishReason" type="string">
+      Why generation stopped (e.g., 'stop', 'length', 'safety')
+    </ResponseField>
+
+    <ResponseField name="finishMessage" type="string" optional>
+      Additional details about finish reason
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+import { generate } from '@genkit-ai/ai';
+import { z } from 'zod';
+
+// Simple text generation
+const response = await generate(registry, {
+  model: 'googleai/gemini-2.0-flash-exp',
+  prompt: 'Write a haiku about code',
+});
+console.log(response.text);
+
+// Structured output
+const response = await generate(registry, {
+  model: 'googleai/gemini-2.0-flash-exp',
+  prompt: 'List 3 programming languages',
+  output: {
+    schema: z.object({
+      languages: z.array(z.string()),
+    }),
+  },
+});
+const { languages } = response.output();
+
+// With tools
+const response = await generate(registry, {
+  model: 'googleai/gemini-2.0-flash-exp',
+  prompt: 'What is the weather in Paris?',
+  tools: [weatherTool],
+});
+```
+
+## generateStream()
+
+Streaming version of `generate()` that yields response chunks as they are generated.
+
+**Signature:**
+
+```typescript
+generateStream<O extends z.ZodTypeAny = z.ZodTypeAny, CustomOptions extends z.ZodTypeAny = typeof GenerationCommonConfigSchema>(
+  registry: Registry,
+  options: GenerateStreamOptions<O, CustomOptions> | PromiseLike<GenerateStreamOptions<O, CustomOptions>>
+): GenerateStreamResponse<z.infer<O>>
+```
+
+### Parameters
+
+Accepts the same `GenerateOptions` as `generate()`, plus:
+
+<ParamField path="onChunk" type="StreamingCallback" optional>
+  Callback invoked for each chunk:
+  ```typescript
+  (chunk: GenerateResponseChunk) => void | Promise<void>
+  ```
+</ParamField>
+
+### Returns
+
+<ResponseField name="response" type="GenerateStreamResponse">
+  Streaming response object
+
+  <Expandable title="properties">
+    <ResponseField name="response" type="Promise<GenerateResponse>">
+      Promise that resolves to the final complete response
+    </ResponseField>
+
+    <ResponseField name="stream" type="Channel<GenerateResponseChunk>">
+      Async iterable channel of response chunks. Each chunk contains:
+      - `text`: Incremental text
+      - `content`: Array of content parts
+      - `usage`: Cumulative token usage
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+import { generateStream } from '@genkit-ai/ai';
+
+const { response, stream } = generateStream(registry, {
+  model: 'googleai/gemini-2.0-flash-exp',
+  prompt: 'Write a long story',
+});
+
+// Process chunks as they arrive
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text);
+}
+
+// Get final response
+const final = await response;
+console.log('\nUsage:', final.usage);
+```
+
+## modelRef()
+
+Creates a reference to a model by name.
+
+**Signature:**
+
+```typescript
+modelRef<ConfigSchema extends z.ZodTypeAny = z.ZodTypeAny>(options: {
+  name: string;
+  config?: z.infer<ConfigSchema>;
+  info?: ModelInfo;
+}): ModelReference<ConfigSchema>
+```
+
+### Parameters
+
+<ParamField path="options" type="object" required>
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Model name (e.g., 'googleai/gemini-2.0-flash-exp')
+    </ParamField>
+
+    <ParamField path="config" type="object" optional>
+      Default configuration for this model reference
+    </ParamField>
+
+    <ParamField path="info" type="ModelInfo" optional>
+      Model metadata (capabilities, version, etc.)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="reference" type="ModelReference">
+  A reference object that can be passed to `generate()` or other model functions
+</ResponseField>
+
+### Example
+
+```typescript
+import { modelRef } from '@genkit-ai/ai/model';
+
+const flash = modelRef({
+  name: 'googleai/gemini-2.0-flash-exp',
+  config: {
+    temperature: 0.7,
+  },
+});
+
+const response = await generate(registry, {
+  model: flash,
+  prompt: 'Hello!',
+});
+```
+
+## Types
+
+### GenerateRequest
+
+The raw request object sent to a model.
+
+```typescript
+interface GenerateRequest<CustomOptions extends z.ZodTypeAny = z.ZodTypeAny> {
+  messages: MessageData[];
+  config?: z.infer<CustomOptions>;
+  tools?: ToolDefinition[];
+  output?: {
+    format?: string;
+    schema?: JSONSchema;
+  };
+  candidates?: number;
+}
+```
+
+### GenerateResponse
+
+The response from a model.
+
+```typescript
+interface GenerateResponse<O = any> {
+  message?: MessageData;
+  text: string;
+  output: () => O;
+  messages: MessageData[];
+  usage?: GenerationUsage;
+  finishReason?: string;
+  finishMessage?: string;
+  request: GenerateRequest;
+}
+```
+
+### Part
+
+Content part within a message.
+
+```typescript
+type Part = TextPart | MediaPart | DataPart | ToolRequestPart | ToolResponsePart | CustomPart;
+
+interface TextPart {
+  text: string;
+}
+
+interface MediaPart {
+  media: {
+    url: string;
+    contentType?: string;
+  };
+}
+
+interface DataPart {
+  data: any;
+}
+
+interface ToolRequestPart {
+  toolRequest: {
+    name: string;
+    ref?: string;
+    input: any;
+  };
+}
+
+interface ToolResponsePart {
+  toolResponse: {
+    name: string;
+    ref?: string;
+    output: any;
+  };
+}
+```
+
+### MessageData
+
+A message in the conversation.
+
+```typescript
+interface MessageData {
+  role: 'user' | 'model' | 'system' | 'tool';
+  content: Part[];
+  metadata?: Record<string, any>;
+}
+```
+
+## See Also
+
+- [Genkit API](/api/javascript/genkit)
+- [Tools API](/api/javascript/tools)
+- [Prompts API](/api/javascript/prompts)
